@@ -5,6 +5,11 @@
       <code>VITE_SUPABASE_ANON_KEY</code> to <code>.env</code> and restart the dev server.
     </div>
     <div v-else-if="auth.error" class="card error">{{ auth.error }}</div>
+    <div v-else-if="!auth.userId" class="card stack">
+      <h2>Sign in required</h2>
+      <p class="secondary">Create an account or sign in to set up your profile.</p>
+      <RouterLink class="primary" to="/auth">Go to sign in</RouterLink>
+    </div>
     <div v-else class="card stack">
       <div v-if="notice" class="notice">{{ notice }}</div>
       <h2>Profile Maker</h2>

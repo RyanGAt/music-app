@@ -5,6 +5,11 @@
       <code>VITE_SUPABASE_ANON_KEY</code> to <code>.env</code> and restart the dev server.
     </div>
     <div v-else-if="auth.error" class="card error">{{ auth.error }}</div>
+    <div v-else-if="!auth.userId" class="card stack">
+      <h2>Sign in required</h2>
+      <p class="secondary">Sign in to see your likes and comments activity.</p>
+      <RouterLink class="primary" to="/auth">Go to sign in</RouterLink>
+    </div>
     <div v-else-if="loading" class="card">Loading activity…</div>
 
     <div v-if="!loading && activity.length === 0" class="card">No activity yet.</div>

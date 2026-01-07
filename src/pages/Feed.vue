@@ -151,8 +151,12 @@ const playPost = async (post: Post) => {
 };
 
 const requireProfile = async () => {
+  if (!auth.userId) {
+    await router.push({ path: '/auth', query: { next: route.fullPath } });
+    return false;
+  }
   if (auth.profileComplete) return true;
-  await router.push({ path: '/profile', query: { notice: 'complete', next: route.fullPath } });
+  await router.push({ path: '/profile/setup', query: { notice: 'complete', next: route.fullPath } });
   return false;
 };
 
@@ -183,7 +187,7 @@ const submitComment = async (text: string) => {
 
 onMounted(async () => {
   await auth.init();
-  if (supabaseConfigured && auth.userId) {
+  if (supabaseConfigured) {
     await feed.fetchFeed();
     await loadTracks(feed.posts);
     requestAnimationFrame(setupObserver);

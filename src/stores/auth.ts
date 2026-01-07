@@ -15,10 +15,12 @@ const isProfileComplete = (profile: Profile | null) => {
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     userId: '' as string,
+    email: '' as string,
     profile: null as Profile | null,
     profileComplete: false,
     ready: false,
     error: '' as string,
+    loading: false,
   }),
   actions: {
     async init() {
@@ -28,27 +30,85 @@ export const useAuthStore = defineStore('auth', {
           this.ready = true;
           return;
         }
-        const { data } = await supabase.auth.getSession();
-        if (!data.session) {
-          const { data: anonData, error } = await supabase.auth.signInAnonymously();
-          if (error) throw error;
-          this.userId = anonData.session?.user.id ?? '';
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        const session = data.session;
+        if (session?.user) {
+          this.userId = session.user.id;
+          this.email = session.user.email ?? '';
+          await this.fetchProfile();
         } else {
-          this.userId = data.session.user.id;
+          this.userId = '';
+          this.email = '';
+          this.profile = null;
+          this.profileComplete = false;
         }
-
-        if (!this.userId) return;
-        const { data: existing } = await supabase
-          .from('profiles')
-          .select('id, display_name, avatar_url')
-          .eq('id', this.userId)
-          .maybeSingle();
-
-        this.profile = existing ?? null;
-        this.profileComplete = isProfileComplete(this.profile);
       } catch (error) {
         this.error = error instanceof Error ? error.message : 'Failed to initialize auth';
       } finally {
+        this.ready = true;
+      }
+    },
+    async fetchProfile() {
+      if (!this.userId) return;
+      const { data: existing, error } = await supabase
+        .from('profiles')
+        .select('id, display_name, avatar_url')
+        .eq('id', this.userId)
+        .maybeSingle();
+      if (error) throw error;
+      this.profile = existing ?? null;
+      this.profileComplete = isProfileComplete(this.profile);
+    },
+    async signIn(email: string, password: string) {
+      this.loading = true;
+      this.error = '';
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        this.userId = data.user?.id ?? '';
+        this.email = data.user?.email ?? email;
+        await this.fetchProfile();
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : 'Failed to sign in';
+        throw error;
+      } finally {
+        this.loading = false;
+        this.ready = true;
+      }
+    },
+    async signUp(email: string, password: string) {
+      this.loading = true;
+      this.error = '';
+      try {
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        this.userId = data.user?.id ?? '';
+        this.email = data.user?.email ?? email;
+        await this.fetchProfile();
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : 'Failed to sign up';
+        throw error;
+      } finally {
+        this.loading = false;
+        this.ready = true;
+      }
+    },
+    async signOut() {
+      this.loading = true;
+      this.error = '';
+      try {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : 'Failed to sign out';
+        throw error;
+      } finally {
+        this.userId = '';
+        this.email = '';
+        this.profile = null;
+        this.profileComplete = false;
+        this.loading = false;
         this.ready = true;
       }
     },
