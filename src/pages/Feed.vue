@@ -1,33 +1,28 @@
 <template>
   <section class="stack">
-    <div v-if="!auth.isSpotifyAuthed" class="card stack">
-      <h2>Connect Spotify</h2>
-      <p class="secondary">Log in to load your SoundScroll feed.</p>
-      <button class="primary" @click="auth.loginWithSpotify">Connect Spotify</button>
+    <div v-if="!supabaseConfigured" class="card error">
+      Missing Supabase env. Add <code>VITE_SUPABASE_URL</code> and
+      <code>VITE_SUPABASE_ANON_KEY</code> to <code>.env</code> and restart the dev server.
+    </div>
+    <div v-else-if="auth.error" class="card error">{{ auth.error }}</div>
+    <div v-if="feed.loading" class="card">Loading feed…</div>
+
+    <div v-if="supabaseConfigured && !player.audioUnlocked" class="card">
+      <p class="secondary">Tap to enable autoplay audio.</p>
+      <button class="primary" @click="player.unlockAudio">Enable Audio</button>
     </div>
 
-    <div v-else class="stack">
-      <div class="banner" v-if="player.previewMode">Preview mode (30s clips).</div>
-      <div class="banner" v-else>Streaming on your Spotify device.</div>
-      <div v-if="!player.audioUnlocked" class="card">
-        <p class="secondary">Tap to enable autoplay audio.</p>
-        <button class="primary" @click="player.unlockAudio">Enable Audio</button>
-      </div>
-      <div v-if="auth.error" class="card error">{{ auth.error }}</div>
-      <div v-if="feed.loading" class="card">Loading feed…</div>
-
-      <div ref="feedContainer" class="feed-list">
-        <div v-for="post in feed.posts" :key="post.id" :data-post-id="post.id">
-          <FeedItem
-            :post="post"
-            :track="trackFor(post)"
-            :is-active="feed.activePostId === post.id"
-            :liked="likedPostIds().has(post.id)"
-            @like="toggleLike(post)"
-            @repost="openRepost(post)"
-            @comment="openComments(post)"
-          />
-        </div>
+    <div v-if="supabaseConfigured" ref="feedContainer" class="feed-list">
+      <div v-for="post in feed.posts" :key="post.id" :data-post-id="post.id">
+        <FeedItem
+          :post="post"
+          :track="trackFor(post)"
+          :is-active="feed.activePostId === post.id"
+          :liked="likedPostIds().has(post.id)"
+          @like="toggleLike(post)"
+          @repost="openRepost(post)"
+          @comment="openComments(post)"
+        />
       </div>
     </div>
 
@@ -47,7 +42,7 @@ import CommentsModal from '../components/CommentsModal.vue';
 import { useAuthStore } from '../stores/auth';
 import { useFeedStore } from '../stores/feed';
 import { usePlayerStore } from '../stores/player';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 import type { Post } from '../stores/feed';
 
 const auth = useAuthStore();
@@ -113,11 +108,7 @@ const playPost = async (post: Post) => {
   const trackId = post.type === 'repost' ? post.original?.track_id : post.track_id;
   if (!trackId) return;
   const track = await feed.fetchTrack(trackId);
-  await player.playTrack({
-    trackId,
-    previewUrl: track.preview_url,
-    startMs: post.type === 'repost' ? post.original?.start_ms ?? undefined : post.start_ms ?? undefined,
-  });
+  await player.playTrack(track, post.type === 'repost' ? post.original?.start_ms ?? undefined : post.start_ms ?? undefined);
 };
 
 const toggleLike = async (post: Post) => {
@@ -149,8 +140,7 @@ const submitComment = async (text: string) => {
 
 onMounted(async () => {
   await auth.init();
-  if (auth.isSpotifyAuthed && auth.spotifyProfile) {
-    await player.initPlayer(auth.isPremium);
+  if (supabaseConfigured && auth.userId) {
     await feed.fetchFeed();
     await loadTracks(feed.posts);
     requestAnimationFrame(setupObserver);
@@ -165,9 +155,18 @@ watch(
   },
 );
 
+watch(
+  () => player.audioUnlocked,
+  (value) => {
+    if (value && activePost.value) {
+      playPost(activePost.value);
+    }
+  },
+);
+
 onBeforeUnmount(() => {
   observer.value?.disconnect();
-  player.stop();
+  player.pause();
 });
 </script>
 
@@ -191,13 +190,6 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 20px;
   scroll-snap-type: y mandatory;
-}
-.banner {
-  text-align: center;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  font-size: 0.85rem;
 }
 .error {
   background: rgba(255, 0, 80, 0.1);
