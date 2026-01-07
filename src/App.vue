@@ -5,7 +5,7 @@
       <nav class="nav">
         <RouterLink to="/feed">Feed</RouterLink>
         <RouterLink to="/random">Random</RouterLink>
-        <RouterLink to="/create">Create</RouterLink>
+        <RouterLink to="/activity">Activity</RouterLink>
       </nav>
     </header>
     <main class="app-main">

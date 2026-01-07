@@ -19,16 +19,27 @@
           :like-count="item.likeCount"
           :comment-count="item.commentCount"
           :is-active="activeTrackId === item.track.id"
+          :liked="item.likedPostId !== null"
+          @like="toggleLike(item)"
+          @comment="openComments(item)"
         />
       </div>
       <div v-if="loadingMore" class="card">Loading more tracks…</div>
     </div>
+
+    <CommentsModal
+      v-if="commentsOpen"
+      :comments="comments"
+      @close="commentsOpen = false"
+      @submit="submitComment"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, nextTick, ref, watch } from 'vue';
 import RandomTrackItem from '../components/RandomTrackItem.vue';
+import CommentsModal from '../components/CommentsModal.vue';
 import { audiusProvider } from '../lib/audiusProvider';
 import { supabase, supabaseConfigured } from '../lib/supabase';
 import type { Track } from '../lib/musicProvider';
@@ -42,6 +53,8 @@ type RandomItem = {
   track: Track;
   likeCount: number;
   commentCount: number;
+  postId: string | null;
+  likedPostId: string | null;
 };
 
 const items = ref<RandomItem[]>([]);
@@ -53,24 +66,53 @@ const observer = ref<IntersectionObserver | null>(null);
 const knownTrackIds = new Set<string>();
 const pausedForScroll = ref(false);
 const pausedTrackId = ref<string | null>(null);
+const commentsOpen = ref(false);
+const comments = ref<{ id: string; text: string; created_at: string }[]>([]);
+const activeItem = ref<RandomItem | null>(null);
 
-const fetchCounts = async (trackIds: string[]) => {
-  const counts = new Map<string, { likeCount: number; commentCount: number }>();
-  trackIds.forEach((id) => counts.set(id, { likeCount: 0, commentCount: 0 }));
+const upsertTrackCache = async (track: Track) => {
+  await supabase.from('tracks_cache').upsert(
+    {
+      id: track.id,
+      source: 'audius',
+      title: track.title,
+      artist: track.artist,
+      duration_ms: track.duration_ms,
+      artwork_url: track.artwork_url ?? null,
+      permalink_url: track.permalink_url ?? null,
+      stream_url: track.stream_url ?? null,
+      last_fetched_at: new Date().toISOString(),
+    },
+    { onConflict: 'id' },
+  );
+};
+
+const fetchMeta = async (trackIds: string[]) => {
+  const counts = new Map<
+    string,
+    { likeCount: number; commentCount: number; postId: string | null; likedPostId: string | null }
+  >();
+  trackIds.forEach((id) => counts.set(id, { likeCount: 0, commentCount: 0, postId: null, likedPostId: null }));
 
   if (trackIds.length === 0 || !supabaseConfigured) return counts;
 
   const { data: posts } = await supabase
     .from('posts')
-    .select('id, track_id')
+    .select('id, track_id, created_at')
     .in('track_id', trackIds)
-    .eq('visibility', 'public');
+    .eq('visibility', 'public')
+    .order('created_at', { ascending: false });
 
   const postIds = posts?.map((post) => post.id) ?? [];
   if (postIds.length === 0) return counts;
 
-  const { data: likes } = await supabase.from('likes').select('post_id').in('post_id', postIds);
+  const { data: likes } = await supabase.from('likes').select('post_id, user_id').in('post_id', postIds);
   const { data: comments } = await supabase.from('comments').select('post_id').in('post_id', postIds);
+  const { data: userLikes } = await supabase
+    .from('likes')
+    .select('post_id')
+    .eq('user_id', auth.userId)
+    .in('post_id', postIds);
 
   const likeCountsByPost = new Map<string, number>();
   likes?.forEach((like) => {
@@ -83,12 +125,22 @@ const fetchCounts = async (trackIds: string[]) => {
   });
 
   const trackToPosts = new Map<string, string[]>();
+  const postToTrack = new Map<string, string>();
   posts?.forEach((post) => {
     if (!post.track_id) return;
+    postToTrack.set(post.id, post.track_id);
     if (!trackToPosts.has(post.track_id)) {
       trackToPosts.set(post.track_id, []);
     }
     trackToPosts.get(post.track_id)!.push(post.id);
+  });
+
+  const likedPostIdsByTrack = new Map<string, string>();
+  userLikes?.forEach((like) => {
+    const trackId = postToTrack.get(like.post_id);
+    if (trackId && !likedPostIdsByTrack.has(trackId)) {
+      likedPostIdsByTrack.set(trackId, like.post_id);
+    }
   });
 
   trackToPosts.forEach((postIdsForTrack, trackId) => {
@@ -100,10 +152,90 @@ const fetchCounts = async (trackIds: string[]) => {
       (total, postId) => total + (commentCountsByPost.get(postId) ?? 0),
       0,
     );
-    counts.set(trackId, { likeCount, commentCount });
+    counts.set(trackId, {
+      likeCount,
+      commentCount,
+      postId: postIdsForTrack[0] ?? null,
+      likedPostId: likedPostIdsByTrack.get(trackId) ?? null,
+    });
   });
 
   return counts;
+};
+
+const refreshItemMeta = async (trackId: string) => {
+  const meta = await fetchMeta([trackId]);
+  const update = meta.get(trackId);
+  if (!update) return;
+  const item = items.value.find((entry) => entry.track.id === trackId);
+  if (!item) return;
+  item.likeCount = update.likeCount;
+  item.commentCount = update.commentCount;
+  item.postId = update.postId;
+  item.likedPostId = update.likedPostId;
+};
+
+const ensurePostForTrack = async (item: RandomItem) => {
+  if (item.postId) return item.postId;
+  const createdAt = new Date().toISOString();
+  const { data } = await supabase
+    .from('posts')
+    .insert({
+      user_id: auth.userId,
+      type: 'auto_moment',
+      source: 'audius',
+      track_id: item.track.id,
+      start_ms: 0,
+      text: null,
+      visibility: 'public',
+      created_at: createdAt,
+    })
+    .select('id')
+    .single();
+  if (!data?.id) return item.postId;
+  await upsertTrackCache(item.track);
+  item.postId = data.id;
+  return data.id;
+};
+
+const toggleLike = async (item: RandomItem) => {
+  if (!supabaseConfigured || !auth.userId) return;
+  const postId = await ensurePostForTrack(item);
+  if (!postId) return;
+  if (item.likedPostId) {
+    await supabase.from('likes').delete().eq('post_id', item.likedPostId).eq('user_id', auth.userId);
+  } else {
+    await supabase.from('likes').insert({ post_id: postId, user_id: auth.userId });
+  }
+  await refreshItemMeta(item.track.id);
+};
+
+const loadComments = async (postId: string) => {
+  const { data } = await supabase
+    .from('comments')
+    .select('id, text, created_at')
+    .eq('post_id', postId)
+    .order('created_at', { ascending: false });
+  comments.value = data ?? [];
+};
+
+const openComments = async (item: RandomItem) => {
+  if (!supabaseConfigured || !auth.userId) return;
+  const postId = await ensurePostForTrack(item);
+  if (!postId) return;
+  activeItem.value = item;
+  commentsOpen.value = true;
+  await loadComments(postId);
+};
+
+const submitComment = async (text: string) => {
+  if (!activeItem.value || text.trim().length === 0) return;
+  if (!supabaseConfigured || !auth.userId) return;
+  const postId = await ensurePostForTrack(activeItem.value);
+  if (!postId) return;
+  await supabase.from('comments').insert({ post_id: postId, user_id: auth.userId, text: text.trim() });
+  commentsOpen.value = false;
+  await refreshItemMeta(activeItem.value.track.id);
 };
 
 const loadRandomTracks = async (count: number) => {
@@ -118,14 +250,21 @@ const loadRandomTracks = async (count: number) => {
     });
     if (unique.length === 0) return;
 
-    const counts = await fetchCounts(unique.map((track) => track.id));
+    const counts = await fetchMeta(unique.map((track) => track.id));
     items.value.push(
       ...unique.map((track) => {
-        const meta = counts.get(track.id) ?? { likeCount: 0, commentCount: 0 };
+        const meta = counts.get(track.id) ?? {
+          likeCount: 0,
+          commentCount: 0,
+          postId: null,
+          likedPostId: null,
+        };
         return {
           track,
           likeCount: meta.likeCount,
           commentCount: meta.commentCount,
+          postId: meta.postId,
+          likedPostId: meta.likedPostId,
         };
       }),
     );

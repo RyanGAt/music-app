@@ -17,6 +17,12 @@
       </div>
     </div>
     <div class="meta">
+      <button class="ghost" type="button" @click="$emit('like')">{{ liked ? 'Unlike' : 'Like' }}</button>
+      <button class="ghost" type="button" @click="$emit('comment')">
+        Comments ({{ commentCount }})
+      </button>
+    </div>
+    <div class="counts">
       <span class="secondary">{{ likeCount }} likes</span>
       <span class="secondary">{{ commentCount }} comments</span>
     </div>
@@ -27,7 +33,9 @@
 import { ref } from 'vue';
 import type { Track } from '../lib/musicProvider';
 
-defineProps<{ track: Track; likeCount: number; commentCount: number; isActive: boolean }>();
+defineProps<{ track: Track; likeCount: number; commentCount: number; isActive: boolean; liked: boolean }>();
+
+defineEmits(['like', 'comment']);
 
 const expanded = ref(false);
 </script>
@@ -83,6 +91,11 @@ const expanded = ref(false);
   gap: 8px;
 }
 .meta {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+.counts {
   display: flex;
   justify-content: center;
   gap: 16px;
