@@ -1,13 +1,14 @@
 import { defineStore } from 'pinia';
 import { supabase } from '../lib/supabase';
 import type { Track } from '../lib/musicProvider';
-import { mockMusicProvider } from '../lib/mockMusicProvider';
+import { audiusProvider } from '../lib/audiusProvider';
 import { useAuthStore } from './auth';
 
 export type Post = {
   id: string;
   user_id: string;
-  type: 'song_moment' | 'repost';
+  type: 'auto_moment' | 'song_moment' | 'repost';
+  source: string;
   track_id: string | null;
   start_ms: number | null;
   text: string | null;
@@ -23,6 +24,20 @@ const FEED_BASE = 1;
 const REPOST_BOOST = 1.5;
 const NEIGHBOR_BOOST = 1.2;
 const LIKE_BOOST = 0.25;
+const MIN_FEED_ITEMS = 30;
+const MOMENT_WINDOW_MS = 15000;
+
+const toTrackCacheRow = (track: Track) => ({
+  id: track.id,
+  source: 'audius',
+  title: track.title,
+  artist: track.artist,
+  duration_ms: track.duration_ms,
+  artwork_url: track.artwork_url ?? null,
+  permalink_url: track.permalink_url ?? null,
+  stream_url: track.stream_url ?? null,
+  last_fetched_at: new Date().toISOString(),
+});
 
 export const useFeedStore = defineStore('feed', {
   state: () => ({
@@ -34,11 +49,47 @@ export const useFeedStore = defineStore('feed', {
     likedPostIds: new Set<string>(),
   }),
   actions: {
+    async upsertTrackCache(tracks: Track[]) {
+      if (tracks.length === 0) return;
+      const rows = tracks.map(toTrackCacheRow);
+      await supabase.from('tracks_cache').upsert(rows, { onConflict: 'id' });
+      rows.forEach((row) => {
+        this.trackCache.set(row.id, {
+          id: row.id,
+          title: row.title,
+          artist: row.artist,
+          duration_ms: row.duration_ms,
+          artwork_url: row.artwork_url ?? undefined,
+          permalink_url: row.permalink_url ?? undefined,
+          stream_url: row.stream_url ?? undefined,
+        });
+      });
+    },
     async fetchTrack(trackId: string) {
       if (this.trackCache.has(trackId)) return this.trackCache.get(trackId)!;
-      const track = await mockMusicProvider.getTrack(trackId);
+      const { data: cached } = await supabase
+        .from('tracks_cache')
+        .select('id, title, artist, duration_ms, artwork_url, permalink_url, stream_url')
+        .eq('id', trackId)
+        .maybeSingle();
+
+      if (cached) {
+        const track: Track = {
+          id: cached.id,
+          title: cached.title,
+          artist: cached.artist,
+          duration_ms: cached.duration_ms,
+          artwork_url: cached.artwork_url ?? undefined,
+          permalink_url: cached.permalink_url ?? undefined,
+          stream_url: cached.stream_url ?? undefined,
+        };
+        this.trackCache.set(trackId, track);
+        return track;
+      }
+
+      const track = await audiusProvider.getTrack(trackId);
       if (!track) throw new Error('Track not found');
-      this.trackCache.set(trackId, track);
+      await this.upsertTrackCache([track]);
       return track;
     },
     async computeTasteNeighbors(userId: string) {
@@ -107,26 +158,63 @@ export const useFeedStore = defineStore('feed', {
       });
       this.tasteNeighbors = neighbors;
     },
-    async fetchFeed() {
-      const auth = useAuthStore();
-      this.loading = true;
-      await this.computeTasteNeighbors(auth.userId);
-
+    async loadPosts() {
       const { data: posts, error } = await supabase
         .from('posts')
         .select(
-          'id, user_id, type, track_id, start_ms, text, original_post_id, created_at, profiles:profiles!posts_user_id_fkey(id, display_name, avatar_url), original:posts!original_post_id(id, user_id, track_id, start_ms, text, created_at, profiles:profiles!posts_user_id_fkey(id, display_name, avatar_url))',
+          'id, user_id, type, source, track_id, start_ms, text, original_post_id, created_at, profiles:profiles!posts_user_id_fkey(id, display_name, avatar_url), original:posts!original_post_id(id, user_id, type, source, track_id, start_ms, text, created_at, profiles:profiles!posts_user_id_fkey(id, display_name, avatar_url))',
         )
         .eq('visibility', 'public')
         .order('created_at', { ascending: false })
         .limit(80);
 
-      if (error) {
-        this.loading = false;
-        throw error;
+      if (error) throw error;
+      return posts ?? [];
+    },
+    async ensureAutoMoments(existingCount: number) {
+      const auth = useAuthStore();
+      const needed = Math.max(0, MIN_FEED_ITEMS - existingCount);
+      if (!auth.userId || needed === 0) return;
+
+      let tracks: Track[] = [];
+      try {
+        tracks = await audiusProvider.getRandomTracks(needed);
+      } catch (error) {
+        console.warn('Failed to fetch Audius tracks', error);
+        return;
+      }
+      if (tracks.length === 0) return;
+
+      const now = new Date().toISOString();
+      const inserts = tracks.map((track) => {
+        const maxStart = Math.max(0, track.duration_ms - MOMENT_WINDOW_MS);
+        const startMs = maxStart > 0 ? Math.floor(Math.random() * maxStart) : 0;
+        return {
+          user_id: auth.userId,
+          type: 'auto_moment',
+          source: 'audius',
+          track_id: track.id,
+          start_ms: startMs,
+          text: null,
+          created_at: now,
+        };
+      });
+
+      await supabase.from('posts').insert(inserts);
+      await this.upsertTrackCache(tracks);
+    },
+    async fetchFeed() {
+      const auth = useAuthStore();
+      this.loading = true;
+      await this.computeTasteNeighbors(auth.userId);
+
+      let posts = await this.loadPosts();
+      if (posts.length < MIN_FEED_ITEMS) {
+        await this.ensureAutoMoments(posts.length);
+        posts = await this.loadPosts();
       }
 
-      const postIds = posts?.map((post) => post.id) ?? [];
+      const postIds = posts.map((post) => post.id);
       if (postIds.length === 0) {
         this.posts = [];
         this.loading = false;
@@ -157,7 +245,7 @@ export const useFeedStore = defineStore('feed', {
         ?.filter((like) => this.tasteNeighbors.has(like.user_id))
         .forEach((like) => neighborLikes.add(like.post_id));
 
-      const ranked = (posts ?? []).map((post) => {
+      const ranked = posts.map((post) => {
         const createdAt = new Date(post.created_at).getTime();
         const hours = (Date.now() - createdAt) / 36e5;
         const freshness = 1 / (1 + hours / 24);
@@ -176,7 +264,7 @@ export const useFeedStore = defineStore('feed', {
         } as Post & { score: number };
       });
 
-      this.posts = ranked.sort((a, b) => b.score - a.score);
+      this.posts = ranked.sort((a, b) => b.score - a.score || Date.parse(b.created_at) - Date.parse(a.created_at));
       this.loading = false;
     },
     async toggleLike(postId: string, isLiked: boolean) {
@@ -195,6 +283,7 @@ export const useFeedStore = defineStore('feed', {
         user_id: auth.userId,
         original_post_id: postId,
         text,
+        source: 'audius',
       });
       await this.fetchFeed();
     },
