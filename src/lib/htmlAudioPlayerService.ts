@@ -94,7 +94,6 @@ export class HtmlAudioPlayerService implements PlayerService {
   async fadeTo(track: Track, startMs?: number) {
     await this.init();
     if (!track.preview_url) return;
-    if (this.current?.trackId === track.id) return;
 
     const next = this.createNode(track, startMs);
     await next.audio.play();
