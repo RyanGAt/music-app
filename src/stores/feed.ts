@@ -51,7 +51,7 @@ export const useFeedStore = defineStore('feed', {
 
       const { data: reposted } = await supabase
         .from('posts')
-        .select('user_id, original:posts!posts_original_post_id_fkey(track_id)')
+        .select('user_id, original:posts!original_post_id(track_id)')
         .eq('type', 'repost')
         .gte('created_at', cutoff)
         .eq('user_id', userId);
@@ -77,7 +77,7 @@ export const useFeedStore = defineStore('feed', {
 
       const { data: neighborReposts } = await supabase
         .from('posts')
-        .select('user_id, original:posts!posts_original_post_id_fkey(track_id)')
+        .select('user_id, original:posts!original_post_id(track_id)')
         .eq('type', 'repost')
         .gte('created_at', cutoff)
         .in('original.track_id', [...trackIds]);
@@ -115,7 +115,7 @@ export const useFeedStore = defineStore('feed', {
       const { data: posts, error } = await supabase
         .from('posts')
         .select(
-          'id, user_id, type, track_id, start_ms, text, original_post_id, created_at, profiles:profiles!posts_user_id_fkey(id, display_name, avatar_url), original:posts!posts_original_post_id_fkey(id, user_id, track_id, start_ms, text, created_at, profiles:profiles!posts_user_id_fkey(id, display_name, avatar_url))',
+          'id, user_id, type, track_id, start_ms, text, original_post_id, created_at, profiles:profiles!posts_user_id_fkey(id, display_name, avatar_url), original:posts!original_post_id(id, user_id, track_id, start_ms, text, created_at, profiles:profiles!posts_user_id_fkey(id, display_name, avatar_url))',
         )
         .eq('visibility', 'public')
         .order('created_at', { ascending: false })
