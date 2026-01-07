@@ -36,24 +36,18 @@ npm run dev
 
 ## Core routes
 - `/feed` — main doom-scroll feed
-- `/create` — create a song moment post
+- `/profile` — create your profile (required before liking/commenting)
 - `/u/:id` — profile page
 
 ## Behavior notes
 - Supabase Auth signs in anonymously to get a stable user ID for posting.
+- On first run you’ll be asked to create a profile (display name + optional avatar).
 - Audio autoplay begins after the first user gesture (“Enable Audio”).
 - Tracks are discovered via the Audius public API and cached in `tracks_cache`.
-- Likes, reposts, and comments live inside SoundScroll only.
+- The feed is auto-generated from random tracks; likes/comments are used to surface popularity.
 
 ## Feed ranking
-The feed is generated client-side with constants in `src/stores/feed.ts`:
-- `FEED_BASE = 1`
-- `REPOST_BOOST = 1.5`
-- `NEIGHBOR_BOOST = 1.2`
-- `LIKE_BOOST = 0.25`
-- Freshness decay: `1 / (1 + hours / 24)`
-
-Taste neighbors are users who have liked or reposted at least 3 of the same `track_id`s as the current user in the last 30 days.
+The feed can be sorted by latest or popular. Popularity is based on likes/comments in the last 24 hours, with total counts as a fallback.
 
 ## Future add-ons (documentation only)
 - Connect Spotify/SoundCloud later

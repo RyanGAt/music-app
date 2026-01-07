@@ -14,9 +14,9 @@
 
     <div v-if="posts.length === 0" class="card">No posts yet.</div>
     <div class="stack">
-      <div v-for="post in posts" :key="post.id" class="card">
-        <div class="mood">“{{ post.text || '...' }}”</div>
-        <div class="secondary">{{ post.type === 'repost' ? 'Repost' : 'Moment' }}</div>
+    <div v-for="post in posts" :key="post.id" class="card">
+        <div class="mood">“{{ post.text || 'Auto moment' }}”</div>
+        <div class="secondary">Auto moment</div>
       </div>
     </div>
   </section>
@@ -50,6 +50,7 @@ onMounted(async () => {
     .from('posts')
     .select('id, text, type')
     .eq('user_id', userId)
+    .eq('type', 'auto_moment')
     .order('created_at', { ascending: false })
     .limit(12);
   posts.value = postData ?? [];

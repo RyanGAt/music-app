@@ -1,6 +1,6 @@
 <template>
   <article class="feed-item card" :class="{ active: isActive }">
-    <div class="mood">“{{ post.text || '...' }}”</div>
+    <div class="mood">“{{ post.text || 'Auto moment' }}”</div>
     <div class="track" @click="expanded = !expanded">
       <img v-if="track?.artwork_url" class="art" :src="track.artwork_url" alt="" />
       <div class="track-info">
@@ -18,13 +18,16 @@
       </div>
     </div>
     <div class="actions">
-      <button class="ghost" @click="$emit('like')">{{ liked ? 'Unlike' : 'Like' }}</button>
-      <button class="ghost" @click="$emit('repost')">Repost</button>
-      <button class="ghost" @click="$emit('comment')">Comments ({{ post.commentCount ?? 0 }})</button>
+      <button class="ghost" @click="$emit('like')">
+        {{ liked ? 'Unlike' : 'Like' }} ({{ post.likeCount ?? 0 }})
+      </button>
+      <button class="ghost" @click="$emit('comment')">
+        Comments ({{ post.commentCount ?? 0 }})
+      </button>
     </div>
     <div class="meta">
       <span class="secondary">{{ post.likeCount ?? 0 }} likes</span>
-      <span class="secondary" v-if="post.type === 'repost'">Repost</span>
+      <span class="secondary">{{ post.commentCount ?? 0 }} comments</span>
     </div>
   </article>
 </template>
@@ -36,13 +39,13 @@ import type { Track } from '../lib/musicProvider';
 
 const props = defineProps<{ post: Post; track?: Track; isActive: boolean; liked: boolean }>();
 
-defineEmits(['like', 'repost', 'comment']);
+defineEmits(['like', 'comment']);
 
 const expanded = ref(false);
 
 const momentLabel = computed(() => {
-  const startMs = props.post.type === 'repost' ? props.post.original?.start_ms : props.post.start_ms;
-  if (!startMs) return '';
+  const startMs = props.post.start_ms;
+  if (startMs === null || startMs === undefined) return '';
   const totalSeconds = Math.floor(startMs / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = String(totalSeconds % 60).padStart(2, '0');

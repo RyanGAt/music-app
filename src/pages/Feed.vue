@@ -12,6 +12,26 @@
       <button class="primary" @click="player.unlockAudio">Enable Audio</button>
     </div>
 
+    <div v-if="supabaseConfigured" class="card sort-toggle">
+      <span class="secondary">Sort</span>
+      <button
+        class="ghost"
+        :class="{ active: feed.sortMode === 'latest' }"
+        type="button"
+        @click="feed.setSortMode('latest')"
+      >
+        Latest
+      </button>
+      <button
+        class="ghost"
+        :class="{ active: feed.sortMode === 'popular' }"
+        type="button"
+        @click="feed.setSortMode('popular')"
+      >
+        Popular
+      </button>
+    </div>
+
     <div v-if="supabaseConfigured" ref="feedContainer" class="feed-list">
       <div v-for="post in feed.posts" :key="post.id" :data-post-id="post.id">
         <FeedItem
@@ -20,7 +40,6 @@
           :is-active="feed.activePostId === post.id"
           :liked="likedPostIds().has(post.id)"
           @like="toggleLike(post)"
-          @repost="openRepost(post)"
           @comment="openComments(post)"
         />
       </div>
@@ -44,23 +63,30 @@ import { useFeedStore } from '../stores/feed';
 import { usePlayerStore } from '../stores/player';
 import { supabase, supabaseConfigured } from '../lib/supabase';
 import type { Post } from '../stores/feed';
+import { useRoute, useRouter } from 'vue-router';
 
 const auth = useAuthStore();
 const feed = useFeedStore();
 const player = usePlayerStore();
+const route = useRoute();
+const router = useRouter();
 
 const feedContainer = ref<HTMLElement | null>(null);
 const observer = ref<IntersectionObserver | null>(null);
 const commentsOpen = ref(false);
-const comments = ref<{ id: string; text: string; created_at: string }[]>([]);
+const comments = ref<
+  {
+    id: string;
+    text: string;
+    created_at: string;
+    profiles?: { display_name: string | null; avatar_url: string | null } | null;
+  }[]
+>([]);
 const activePost = ref<Post | null>(null);
 
 const likedPostIds = () => feed.likedPostIds;
 
 const trackFor = (post: Post) => {
-  if (post.type === 'repost' && post.original?.track_id) {
-    return feed.trackCache.get(post.original.track_id);
-  }
   if (post.track_id) {
     return feed.trackCache.get(post.track_id);
   }
@@ -69,7 +95,7 @@ const trackFor = (post: Post) => {
 
 const loadTracks = async (posts: Post[]) => {
   for (const post of posts) {
-    const trackId = post.type === 'repost' ? post.original?.track_id : post.track_id;
+    const trackId = post.track_id;
     if (trackId) {
       await feed.fetchTrack(trackId);
     }
@@ -106,11 +132,11 @@ const setupObserver = () => {
 
 const playPost = async (post: Post) => {
   if (!player.audioUnlocked) return;
-  const trackId = post.type === 'repost' ? post.original?.track_id : post.track_id;
+  const trackId = post.track_id;
   if (!trackId) return;
   try {
     const track = await feed.fetchTrack(trackId);
-    const startMs = post.type === 'repost' ? post.original?.start_ms ?? undefined : post.start_ms ?? undefined;
+    const startMs = post.start_ms ?? undefined;
     const played = await player.playTrack(track, startMs);
     if (!played) throw new Error('Playback failed');
   } catch (error) {
@@ -124,21 +150,24 @@ const playPost = async (post: Post) => {
   }
 };
 
+const requireProfile = async () => {
+  if (auth.profileComplete) return true;
+  await router.push({ path: '/profile', query: { notice: 'complete', next: route.fullPath } });
+  return false;
+};
+
 const toggleLike = async (post: Post) => {
+  if (!(await requireProfile())) return;
   const isLiked = likedPostIds().has(post.id);
   await feed.toggleLike(post.id, isLiked);
 };
 
-const openRepost = async (post: Post) => {
-  const text = prompt('Add a caption (optional)') || null;
-  await feed.repost(post.id, text);
-};
-
 const openComments = async (post: Post) => {
+  if (!(await requireProfile())) return;
   commentsOpen.value = true;
   const { data } = await supabase
     .from('comments')
-    .select('id, text, created_at')
+    .select('id, text, created_at, profiles:profiles!comments_user_id_fkey(display_name, avatar_url)')
     .eq('post_id', post.id)
     .order('created_at', { ascending: false });
   comments.value = data ?? [];
@@ -147,6 +176,7 @@ const openComments = async (post: Post) => {
 
 const submitComment = async (text: string) => {
   if (!activePost.value || text.trim().length === 0) return;
+  if (!(await requireProfile())) return;
   await feed.addComment(activePost.value.id, text.trim());
   commentsOpen.value = false;
 };
@@ -204,6 +234,16 @@ onBeforeUnmount(() => {
 }
 .feed-list > * > * {
   width: 100%;
+}
+.sort-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.sort-toggle .ghost.active {
+  border-color: rgba(91, 75, 255, 0.5);
+  color: #ffffff;
 }
 .error {
   background: rgba(255, 0, 80, 0.1);

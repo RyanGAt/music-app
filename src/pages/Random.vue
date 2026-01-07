@@ -45,9 +45,12 @@ import { supabase, supabaseConfigured } from '../lib/supabase';
 import type { Track } from '../lib/musicProvider';
 import { useAuthStore } from '../stores/auth';
 import { usePlayerStore } from '../stores/player';
+import { useRoute, useRouter } from 'vue-router';
 
 const auth = useAuthStore();
 const player = usePlayerStore();
+const route = useRoute();
+const router = useRouter();
 
 type RandomItem = {
   track: Track;
@@ -67,7 +70,14 @@ const knownTrackIds = new Set<string>();
 const pausedForScroll = ref(false);
 const pausedTrackId = ref<string | null>(null);
 const commentsOpen = ref(false);
-const comments = ref<{ id: string; text: string; created_at: string }[]>([]);
+const comments = ref<
+  {
+    id: string;
+    text: string;
+    created_at: string;
+    profiles?: { display_name: string | null; avatar_url: string | null } | null;
+  }[]
+>([]);
 const activeItem = ref<RandomItem | null>(null);
 
 const upsertTrackCache = async (track: Track) => {
@@ -101,6 +111,7 @@ const fetchMeta = async (trackIds: string[]) => {
     .select('id, track_id, created_at')
     .in('track_id', trackIds)
     .eq('visibility', 'public')
+    .eq('type', 'auto_moment')
     .order('created_at', { ascending: false });
 
   const postIds = posts?.map((post) => post.id) ?? [];
@@ -177,6 +188,8 @@ const refreshItemMeta = async (trackId: string) => {
 
 const ensurePostForTrack = async (item: RandomItem) => {
   if (item.postId) return item.postId;
+  const maxStart = Math.max(0, item.track.duration_ms - 15000);
+  const startMs = maxStart > 0 ? Math.floor(Math.random() * maxStart) : 0;
   const createdAt = new Date().toISOString();
   const { data } = await supabase
     .from('posts')
@@ -185,7 +198,7 @@ const ensurePostForTrack = async (item: RandomItem) => {
       type: 'auto_moment',
       source: 'audius',
       track_id: item.track.id,
-      start_ms: 0,
+      start_ms: startMs,
       text: null,
       visibility: 'public',
       created_at: createdAt,
@@ -200,6 +213,10 @@ const ensurePostForTrack = async (item: RandomItem) => {
 
 const toggleLike = async (item: RandomItem) => {
   if (!supabaseConfigured || !auth.userId) return;
+  if (!auth.profileComplete) {
+    await router.push({ path: '/profile', query: { notice: 'complete', next: route.fullPath } });
+    return;
+  }
   const postId = await ensurePostForTrack(item);
   if (!postId) return;
   if (item.likedPostId) {
@@ -213,7 +230,7 @@ const toggleLike = async (item: RandomItem) => {
 const loadComments = async (postId: string) => {
   const { data } = await supabase
     .from('comments')
-    .select('id, text, created_at')
+    .select('id, text, created_at, profiles:profiles!comments_user_id_fkey(display_name, avatar_url)')
     .eq('post_id', postId)
     .order('created_at', { ascending: false });
   comments.value = data ?? [];
@@ -221,6 +238,10 @@ const loadComments = async (postId: string) => {
 
 const openComments = async (item: RandomItem) => {
   if (!supabaseConfigured || !auth.userId) return;
+  if (!auth.profileComplete) {
+    await router.push({ path: '/profile', query: { notice: 'complete', next: route.fullPath } });
+    return;
+  }
   const postId = await ensurePostForTrack(item);
   if (!postId) return;
   activeItem.value = item;
@@ -231,6 +252,10 @@ const openComments = async (item: RandomItem) => {
 const submitComment = async (text: string) => {
   if (!activeItem.value || text.trim().length === 0) return;
   if (!supabaseConfigured || !auth.userId) return;
+  if (!auth.profileComplete) {
+    await router.push({ path: '/profile', query: { notice: 'complete', next: route.fullPath } });
+    return;
+  }
   const postId = await ensurePostForTrack(activeItem.value);
   if (!postId) return;
   await supabase.from('comments').insert({ post_id: postId, user_id: auth.userId, text: text.trim() });

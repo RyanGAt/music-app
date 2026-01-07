@@ -7,10 +7,16 @@ export type Profile = {
   avatar_url: string | null;
 };
 
+const isProfileComplete = (profile: Profile | null) => {
+  const name = profile?.display_name?.trim() ?? '';
+  return name.length >= 2 && name.length <= 24;
+};
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     userId: '' as string,
     profile: null as Profile | null,
+    profileComplete: false,
     ready: false,
     error: '' as string,
   }),
@@ -38,17 +44,8 @@ export const useAuthStore = defineStore('auth', {
           .eq('id', this.userId)
           .maybeSingle();
 
-        if (!existing) {
-          const displayName = `SoundScroller #${this.userId.slice(0, 5)}`;
-          await supabase.from('profiles').insert({
-            id: this.userId,
-            display_name: displayName,
-            avatar_url: null,
-          });
-          this.profile = { id: this.userId, display_name: displayName, avatar_url: null };
-        } else {
-          this.profile = existing;
-        }
+        this.profile = existing ?? null;
+        this.profileComplete = isProfileComplete(this.profile);
       } catch (error) {
         this.error = error instanceof Error ? error.message : 'Failed to initialize auth';
       } finally {
