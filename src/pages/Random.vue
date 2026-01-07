@@ -144,6 +144,7 @@ const setupObserver = () => {
       if (!top?.target) return;
       const id = (top.target as HTMLElement).dataset.trackId;
       if (!id) return;
+      if (activeTrackId.value === id) return;
       activeTrackId.value = id;
       const activeIndex = items.value.findIndex((item) => item.track.id === id);
       if (activeIndex >= items.value.length - 5) {
@@ -151,6 +152,7 @@ const setupObserver = () => {
       }
       const activeItem = items.value[activeIndex];
       if (activeItem) {
+        if (player.currentTrackId === activeItem.track.id) return;
         playTrack(activeItem.track);
       }
     },
