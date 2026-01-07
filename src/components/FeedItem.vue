@@ -3,11 +3,9 @@
     <div class="mood">“{{ post.text || '...' }}”</div>
     <div class="track" @click="expanded = !expanded">
       <div class="secondary">
-        {{ track?.name || 'Loading track…' }} —
-        {{ track?.artists?.map((artist) => artist.name).join(', ') || 'Spotify' }}
+        {{ track?.title || 'Loading track…' }} — {{ track?.artist || 'Local catalog' }}
       </div>
       <div v-if="expanded" class="expanded">
-        <img v-if="track?.album?.images?.[0]?.url" :src="track.album.images[0].url" alt="Album art" />
         <div class="secondary">Tap to collapse</div>
       </div>
     </div>
@@ -26,9 +24,9 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import type { Post } from '../stores/feed';
-import type { SpotifyTrack } from '../lib/spotify';
+import type { Track } from '../lib/musicProvider';
 
-defineProps<{ post: Post; track?: SpotifyTrack; isActive: boolean; liked: boolean }>();
+defineProps<{ post: Post; track?: Track; isActive: boolean; liked: boolean }>();
 
 defineEmits(['like', 'repost', 'comment']);
 
@@ -59,11 +57,6 @@ const expanded = ref(false);
   display: grid;
   justify-items: center;
   gap: 8px;
-}
-.expanded img {
-  width: 140px;
-  height: 140px;
-  border-radius: 12px;
 }
 .actions {
   display: flex;
