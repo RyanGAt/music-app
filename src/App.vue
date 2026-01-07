@@ -4,6 +4,7 @@
       <div class="brand">SoundScroll</div>
       <nav class="nav">
         <RouterLink to="/feed">Feed</RouterLink>
+        <RouterLink to="/random">Random</RouterLink>
         <RouterLink to="/create">Create</RouterLink>
       </nav>
     </header>

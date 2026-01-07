@@ -8,7 +8,7 @@ export type Post = {
   id: string;
   user_id: string;
   type: 'auto_moment' | 'song_moment' | 'repost';
-  source: string;
+  source?: string;
   track_id: string | null;
   start_ms: number | null;
   text: string | null;
@@ -162,7 +162,7 @@ export const useFeedStore = defineStore('feed', {
       const { data: posts, error } = await supabase
         .from('posts')
         .select(
-          'id, user_id, type, source, track_id, start_ms, text, original_post_id, created_at, profiles:profiles!posts_user_id_fkey(id, display_name, avatar_url), original:posts!original_post_id(id, user_id, type, source, track_id, start_ms, text, created_at, profiles:profiles!posts_user_id_fkey(id, display_name, avatar_url))',
+          'id, user_id, type, track_id, start_ms, text, original_post_id, created_at, profiles:profiles!posts_user_id_fkey(id, display_name, avatar_url), original:posts!original_post_id(id, user_id, type, track_id, start_ms, text, created_at, profiles:profiles!posts_user_id_fkey(id, display_name, avatar_url))',
         )
         .eq('visibility', 'public')
         .order('created_at', { ascending: false })
