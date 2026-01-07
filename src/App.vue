@@ -6,6 +6,7 @@
         <RouterLink to="/feed">Feed</RouterLink>
         <RouterLink to="/random">Random</RouterLink>
         <RouterLink to="/activity">Activity</RouterLink>
+        <RouterLink to="/profile">Profile</RouterLink>
       </nav>
     </header>
     <main class="app-main">
