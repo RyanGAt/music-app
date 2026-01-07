@@ -61,7 +61,8 @@ select
 union all
 select
   (select id from seeded_profiles where rn = 3),
-  (select id from seeded_posts where rn = 2);
+  (select id from seeded_posts where rn = 2)
+on conflict do nothing;
 
 with seeded_profiles as (
   select id, row_number() over () as rn
@@ -74,14 +75,25 @@ seeded_posts as (
   from posts
   order by created_at desc
   limit 4
+),
+seeded_comments as (
+  select
+    (select id from seeded_posts where rn = 1) as post_id,
+    (select id from seeded_profiles where rn = 3) as user_id,
+    'Looping this.' as text
+  union all
+  select
+    (select id from seeded_posts where rn = 2),
+    (select id from seeded_profiles where rn = 1),
+    'Perfect for late-night drives.'
 )
 insert into comments (post_id, user_id, text)
-select
-  (select id from seeded_posts where rn = 1),
-  (select id from seeded_profiles where rn = 3),
-  'Looping this.'
-union all
-select
-  (select id from seeded_posts where rn = 2),
-  (select id from seeded_profiles where rn = 1),
-  'Perfect for late-night drives.';
+select sc.post_id, sc.user_id, sc.text
+from seeded_comments sc
+where not exists (
+  select 1
+  from comments c
+  where c.post_id = sc.post_id
+    and c.user_id = sc.user_id
+    and c.text = sc.text
+);
