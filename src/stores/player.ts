@@ -27,7 +27,6 @@ export const usePlayerStore = defineStore('player', {
     async playTrack(track: Track, startMs?: number) {
       if (!this.audioUnlocked) return;
       if (!track.preview_url) return;
-      if (this.currentTrackId === track.id) return;
       this.currentTrackId = track.id;
       await playerService.fadeTo(track, startMs);
     },
