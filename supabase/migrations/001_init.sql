@@ -69,6 +69,25 @@ alter table tracks_cache enable row level security;
 alter table likes enable row level security;
 alter table comments enable row level security;
 
+drop policy if exists "Public profiles" on profiles;
+drop policy if exists "Users insert own profile" on profiles;
+drop policy if exists "Users update own profile" on profiles;
+
+drop policy if exists "Public posts" on posts;
+drop policy if exists "Users insert own posts" on posts;
+drop policy if exists "Users update own posts" on posts;
+
+drop policy if exists "Public tracks cache" on tracks_cache;
+drop policy if exists "Users insert tracks cache" on tracks_cache;
+drop policy if exists "Users update tracks cache" on tracks_cache;
+
+drop policy if exists "Users manage likes" on likes;
+drop policy if exists "Users delete likes" on likes;
+drop policy if exists "Users read likes" on likes;
+
+drop policy if exists "Users read comments" on comments;
+drop policy if exists "Users insert comments" on comments;
+
 create policy "Public profiles" on profiles for select using (true);
 create policy "Users insert own profile" on profiles for insert with check (auth.uid() = id);
 create policy "Users update own profile" on profiles for update using (auth.uid() = id);
