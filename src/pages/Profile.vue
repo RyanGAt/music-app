@@ -1,10 +1,14 @@
 <template>
   <section class="stack">
-    <div v-if="profile" class="card profile">
+    <div v-if="!supabaseConfigured" class="card error">
+      Missing Supabase env. Add <code>VITE_SUPABASE_URL</code> and
+      <code>VITE_SUPABASE_ANON_KEY</code> to <code>.env</code> and restart the dev server.
+    </div>
+    <div v-else-if="profile" class="card profile">
       <img v-if="profile.avatar_url" :src="profile.avatar_url" alt="" />
       <div>
         <h2>{{ profile.display_name || 'SoundScroller' }}</h2>
-        <p class="secondary">@{{ profile.spotify_user_id }}</p>
+        <p class="secondary">{{ shortId }}</p>
       </div>
     </div>
 
@@ -19,21 +23,25 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 
 const route = useRoute();
-const profile = ref<{ display_name: string | null; spotify_user_id: string | null; avatar_url: string | null } | null>(
-  null,
-);
+const profile = ref<{ display_name: string | null; avatar_url: string | null } | null>(null);
 const posts = ref<{ id: string; text: string | null; type: string }[]>([]);
 
+const shortId = computed(() => {
+  const id = route.params.id as string;
+  return `id: ${id.slice(0, 8)}`;
+});
+
 onMounted(async () => {
+  if (!supabaseConfigured) return;
   const userId = route.params.id as string;
   const { data: profileData } = await supabase
     .from('profiles')
-    .select('display_name, spotify_user_id, avatar_url')
+    .select('display_name, avatar_url')
     .eq('id', userId)
     .single();
   profile.value = profileData;
@@ -61,5 +69,9 @@ onMounted(async () => {
 }
 .mood {
   font-size: 1.1rem;
+}
+.error {
+  background: rgba(255, 0, 80, 0.1);
+  border-color: rgba(255, 0, 80, 0.3);
 }
 </style>

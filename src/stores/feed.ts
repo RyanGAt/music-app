@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { supabase } from '../lib/supabase';
-import { getTrack, type SpotifyTrack } from '../lib/spotify';
+import type { Track } from '../lib/musicProvider';
+import { mockMusicProvider } from '../lib/mockMusicProvider';
 import { useAuthStore } from './auth';
 
 export type Post = {
@@ -27,7 +28,7 @@ export const useFeedStore = defineStore('feed', {
   state: () => ({
     posts: [] as Post[],
     loading: false,
-    trackCache: new Map<string, SpotifyTrack>(),
+    trackCache: new Map<string, Track>(),
     activePostId: null as string | null,
     tasteNeighbors: new Set<string>(),
     likedPostIds: new Set<string>(),
@@ -35,7 +36,8 @@ export const useFeedStore = defineStore('feed', {
   actions: {
     async fetchTrack(trackId: string) {
       if (this.trackCache.has(trackId)) return this.trackCache.get(trackId)!;
-      const track = await getTrack(trackId);
+      const track = await mockMusicProvider.getTrack(trackId);
+      if (!track) throw new Error('Track not found');
       this.trackCache.set(trackId, track);
       return track;
     },
