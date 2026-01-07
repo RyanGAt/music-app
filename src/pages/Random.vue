@@ -51,6 +51,8 @@ const activeTrackId = ref<string | null>(null);
 const feedContainer = ref<HTMLElement | null>(null);
 const observer = ref<IntersectionObserver | null>(null);
 const knownTrackIds = new Set<string>();
+const pausedForScroll = ref(false);
+const pausedTrackId = ref<string | null>(null);
 
 const fetchCounts = async (trackIds: string[]) => {
   const counts = new Map<string, { likeCount: number; commentCount: number }>();
@@ -152,7 +154,11 @@ const setupObserver = () => {
       }
       const activeItem = items.value[activeIndex];
       if (activeItem) {
-        if (player.currentTrackId === activeItem.track.id) return;
+        const shouldReplayPaused =
+          pausedForScroll.value && pausedTrackId.value === activeItem.track.id;
+        if (player.currentTrackId === activeItem.track.id && !shouldReplayPaused) return;
+        pausedForScroll.value = false;
+        pausedTrackId.value = null;
         playTrack(activeItem.track);
       }
     },
@@ -162,6 +168,15 @@ const setupObserver = () => {
     const element = child as HTMLElement;
     observer.value?.observe(element);
   });
+};
+
+const handleScroll = () => {
+  if (!player.audioUnlocked) return;
+  const state = player.getState();
+  if (!state.isPlaying) return;
+  pausedForScroll.value = true;
+  pausedTrackId.value = player.currentTrackId;
+  void player.pause();
 };
 
 const playTrack = async (track: Track) => {
@@ -186,6 +201,8 @@ onMounted(async () => {
   await loadRandomTracks(40);
   loading.value = false;
   requestAnimationFrame(setupObserver);
+  await nextTick();
+  feedContainer.value?.addEventListener('scroll', handleScroll, { passive: true });
 });
 
 watch(
@@ -209,6 +226,7 @@ watch(
 
 onBeforeUnmount(() => {
   observer.value?.disconnect();
+  feedContainer.value?.removeEventListener('scroll', handleScroll);
   player.pause();
 });
 </script>
