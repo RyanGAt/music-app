@@ -2,7 +2,6 @@ create extension if not exists "pgcrypto";
 
 create table if not exists profiles (
   id uuid primary key,
-  spotify_user_id text,
   display_name text,
   avatar_url text,
   created_at timestamptz default now()

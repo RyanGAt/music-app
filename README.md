@@ -1,26 +1,21 @@
 # SoundScroll
 
-SoundScroll is a Spotify-only, audio-first doom scroll feed for sharing short music moments.
+SoundScroll is a local-first, audio-first doom scroll feed for sharing short music moments using a mock catalog.
 
 ## Stack
 - Vue 3 + Vite + TypeScript + Pinia + Vue Router
 - Supabase (Postgres + Auth)
-- Spotify OAuth (Authorization Code with PKCE) + Web Playback SDK
+- HTMLAudioElement + Web Audio API fades
 
 ## Setup
 
-### 1) Spotify app
-1. Create a Spotify app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
-2. Add a Redirect URI that matches your local dev URL (example: `http://localhost:5173/feed`).
-3. Copy the Client ID.
-
-### 2) Supabase project
+### 1) Supabase project
 1. Create a new Supabase project.
 2. In the SQL editor, run the migration in `supabase/migrations/001_init.sql`.
 3. Make sure Row Level Security (RLS) is enabled (the migration does this).
 4. Grab your `Project URL` and `anon` public key.
 
-### 3) Environment variables
+### 2) Environment variables
 Copy `.env.example` to `.env` and fill in values:
 
 ```bash
@@ -30,9 +25,17 @@ cp .env.example .env
 ```
 VITE_SUPABASE_URL=your-supabase-url
 VITE_SUPABASE_ANON_KEY=your-anon-key
-VITE_SPOTIFY_CLIENT_ID=your-spotify-client-id
-VITE_SPOTIFY_REDIRECT_URI=http://localhost:5173/feed
 ```
+
+### 3) Local audio previews
+Add short mp3 previews into `/public/audio`. The repo ships with placeholder mp3 files you can replace. Update the mock catalog in `src/mock/catalog.json` to point at your local files, for example:
+
+```
+/public/audio/lofi-drift.mp3
+/public/audio/night-drive.mp3
+```
+
+The catalog also supports remote mp3 URLs if you prefer.
 
 ### 4) Install + run
 
@@ -47,10 +50,9 @@ npm run dev
 - `/u/:id` — profile page
 
 ## Behavior notes
-- Spotify OAuth runs client-side with PKCE and stores tokens in session/local storage.
 - Supabase Auth signs in anonymously to get a stable user ID for posting.
-- Web Playback SDK is used for Premium accounts. Non-Premium accounts fall back to 30s previews (banner shows Preview mode).
-- Autoplay begins after the first user gesture (“Enable Audio”).
+- Audio autoplay begins after the first user gesture (“Enable Audio”).
+- Track data comes from the mock catalog in `src/mock/catalog.json` (no Spotify or external APIs).
 
 ## Feed ranking
 The feed is generated client-side with constants in `src/stores/feed.ts`:
