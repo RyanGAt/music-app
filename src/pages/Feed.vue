@@ -171,25 +171,20 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.feed-list > * {
-  margin-bottom: 20px;
-}
-.feed-list > *::before {
-  content: '';
-}
-.feed-list > * {
-  position: relative;
+.feed-list {
+  height: 100vh;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
 }
 .feed-list > * {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
   scroll-snap-align: start;
-}
-.feed-list > * {
   scroll-snap-stop: always;
 }
-.feed-list {
-  display: grid;
-  gap: 20px;
-  scroll-snap-type: y mandatory;
+.feed-list > * > * {
+  width: 100%;
 }
 .error {
   background: rgba(255, 0, 80, 0.1);
