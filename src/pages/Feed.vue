@@ -105,10 +105,23 @@ const setupObserver = () => {
 };
 
 const playPost = async (post: Post) => {
+  if (!player.audioUnlocked) return;
   const trackId = post.type === 'repost' ? post.original?.track_id : post.track_id;
   if (!trackId) return;
-  const track = await feed.fetchTrack(trackId);
-  await player.playTrack(track, post.type === 'repost' ? post.original?.start_ms ?? undefined : post.start_ms ?? undefined);
+  try {
+    const track = await feed.fetchTrack(trackId);
+    const startMs = post.type === 'repost' ? post.original?.start_ms ?? undefined : post.start_ms ?? undefined;
+    const played = await player.playTrack(track, startMs);
+    if (!played) throw new Error('Playback failed');
+  } catch (error) {
+    console.warn('Skipping unplayable track', error);
+    const currentIndex = feed.posts.findIndex((item) => item.id === post.id);
+    const nextPost = feed.posts[currentIndex + 1];
+    if (nextPost) {
+      activePost.value = nextPost;
+      playPost(nextPost);
+    }
+  }
 };
 
 const toggleLike = async (post: Post) => {

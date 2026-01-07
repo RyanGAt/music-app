@@ -43,17 +43,32 @@ export class HtmlAudioPlayerService implements PlayerService {
     };
   }
 
+  private async seekIfPossible(audio: HTMLAudioElement, startMs?: number) {
+    if (!startMs || startMs <= 0) return;
+    const target = startMs / 1000;
+
+    try {
+      audio.currentTime = Math.min(target, audio.duration || target);
+    } catch (error) {
+      console.warn('Seek failed', error);
+    }
+  }
+
   private createNode(track: Track, startMs?: number) {
     if (!this.audioContext) throw new Error('Audio context not initialized');
-    const audio = new Audio(track.preview_url);
+    if (!track.stream_url) throw new Error('Missing stream URL');
+
+    const audio = new Audio();
     audio.crossOrigin = 'anonymous';
     audio.preload = 'auto';
-    if (startMs && startMs > 0) {
-      audio.currentTime = Math.min(startMs / 1000, audio.duration || startMs / 1000);
-    }
+    audio.src = track.stream_url;
+
     audio.addEventListener('timeupdate', () => {
       this.positionMs = audio.currentTime * 1000;
     });
+
+    void this.seekIfPossible(audio, startMs);
+
     const source = this.audioContext.createMediaElementSource(audio);
     const gain = this.audioContext.createGain();
     gain.gain.value = 0;
@@ -71,13 +86,16 @@ export class HtmlAudioPlayerService implements PlayerService {
     }
   }
 
+  private cleanupCurrent() {
+    if (!this.current) return;
+    this.current.audio.pause();
+    this.current.audio.src = '';
+  }
+
   async play(track: Track, startMs?: number) {
     await this.init();
-    if (!track.preview_url) return;
-    if (this.current) {
-      this.current.audio.pause();
-      this.current.audio.src = '';
-    }
+    if (!track.stream_url) return;
+    this.cleanupCurrent();
     this.current = this.createNode(track, startMs);
     await this.current.audio.play();
     this.isPlaying = true;
@@ -93,7 +111,7 @@ export class HtmlAudioPlayerService implements PlayerService {
 
   async fadeTo(track: Track, startMs?: number) {
     await this.init();
-    if (!track.preview_url) return;
+    if (!track.stream_url) return;
 
     const next = this.createNode(track, startMs);
     await next.audio.play();

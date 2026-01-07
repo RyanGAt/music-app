@@ -2,11 +2,19 @@
   <article class="feed-item card" :class="{ active: isActive }">
     <div class="mood">“{{ post.text || '...' }}”</div>
     <div class="track" @click="expanded = !expanded">
-      <div class="secondary">
-        {{ track?.title || 'Loading track…' }} — {{ track?.artist || 'Local catalog' }}
+      <img v-if="track?.artwork_url" class="art" :src="track.artwork_url" alt="" />
+      <div class="track-info">
+        <div class="primary">
+          {{ track?.title || 'Loading track…' }} <span class="source">Audius</span>
+        </div>
+        <div class="secondary">{{ track?.artist || 'Unknown artist' }}</div>
+        <div class="secondary" v-if="momentLabel">Moment: {{ momentLabel }}</div>
       </div>
       <div v-if="expanded" class="expanded">
         <div class="secondary">Tap to collapse</div>
+        <a v-if="track?.permalink_url" :href="track.permalink_url" target="_blank" rel="noreferrer">
+          Open on Audius
+        </a>
       </div>
     </div>
     <div class="actions">
@@ -22,15 +30,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import type { Post } from '../stores/feed';
 import type { Track } from '../lib/musicProvider';
 
-defineProps<{ post: Post; track?: Track; isActive: boolean; liked: boolean }>();
+const props = defineProps<{ post: Post; track?: Track; isActive: boolean; liked: boolean }>();
 
 defineEmits(['like', 'repost', 'comment']);
 
 const expanded = ref(false);
+
+const momentLabel = computed(() => {
+  const startMs = props.post.type === 'repost' ? props.post.original?.start_ms : props.post.start_ms;
+  if (!startMs) return '';
+  const totalSeconds = Math.floor(startMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = String(totalSeconds % 60).padStart(2, '0');
+  return `${minutes}:${seconds}`;
+});
 </script>
 
 <style scoped>
@@ -51,9 +68,34 @@ const expanded = ref(false);
 .track {
   text-align: center;
   cursor: pointer;
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+}
+.track-info {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+}
+.art {
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.primary {
+  font-weight: 600;
+}
+.source {
+  font-size: 0.75rem;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
 }
 .expanded {
-  margin-top: 12px;
+  margin-top: 8px;
   display: grid;
   justify-items: center;
   gap: 8px;
