@@ -47,6 +47,10 @@ create table if not exists comments (
   created_at timestamptz default now()
 );
 
+alter table posts drop constraint if exists posts_text_length;
+alter table comments drop constraint if exists comments_text_length;
+alter table posts drop constraint if exists posts_type_check;
+
 alter table posts add constraint posts_text_length check (char_length(text) <= 120);
 alter table comments add constraint comments_text_length check (char_length(text) <= 120);
 alter table posts add constraint posts_type_check check (type in ('auto_moment', 'song_moment', 'repost'));
