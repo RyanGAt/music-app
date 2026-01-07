@@ -4,7 +4,7 @@
       <img v-if="profile.avatar_url" :src="profile.avatar_url" alt="" />
       <div>
         <h2>{{ profile.display_name || 'SoundScroller' }}</h2>
-        <p class="secondary">@{{ profile.spotify_user_id }}</p>
+        <p class="secondary">{{ shortId }}</p>
       </div>
     </div>
 
@@ -19,21 +19,24 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { supabase } from '../lib/supabase';
 
 const route = useRoute();
-const profile = ref<{ display_name: string | null; spotify_user_id: string | null; avatar_url: string | null } | null>(
-  null,
-);
+const profile = ref<{ display_name: string | null; avatar_url: string | null } | null>(null);
 const posts = ref<{ id: string; text: string | null; type: string }[]>([]);
+
+const shortId = computed(() => {
+  const id = route.params.id as string;
+  return `id: ${id.slice(0, 8)}`;
+});
 
 onMounted(async () => {
   const userId = route.params.id as string;
   const { data: profileData } = await supabase
     .from('profiles')
-    .select('display_name, spotify_user_id, avatar_url')
+    .select('display_name, avatar_url')
     .eq('id', userId)
     .single();
   profile.value = profileData;
