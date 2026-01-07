@@ -175,6 +175,12 @@ onBeforeUnmount(() => {
   height: 100vh;
   overflow-y: auto;
   scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.feed-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 .feed-list > * {
   min-height: 100vh;

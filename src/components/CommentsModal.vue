@@ -66,6 +66,12 @@ header {
   gap: 12px;
   max-height: 40vh;
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.comments::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 .comment {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
