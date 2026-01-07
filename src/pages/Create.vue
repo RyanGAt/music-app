@@ -7,10 +7,11 @@
     <div v-else-if="auth.error" class="card error">{{ auth.error }}</div>
 
     <div v-if="supabaseConfigured" class="card stack">
-      <label class="secondary">Search mock tracks</label>
+      <label class="secondary">Search Audius tracks</label>
       <input v-model="query" @input="search" placeholder="Search tracks" />
       <div class="results">
         <button v-for="track in results" :key="track.id" class="result" @click="selectTrack(track)">
+          <img v-if="track.artwork_url" :src="track.artwork_url" alt="" />
           <div>
             <div>{{ track.title }}</div>
             <div class="secondary">{{ track.artist }}</div>
@@ -37,8 +38,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useAuthStore } from '../stores/auth';
-import { mockMusicProvider } from '../lib/mockMusicProvider';
 import type { Track } from '../lib/musicProvider';
+import { audiusProvider } from '../lib/audiusProvider';
 import { supabase, supabaseConfigured } from '../lib/supabase';
 
 const auth = useAuthStore();
@@ -54,7 +55,12 @@ const search = async () => {
     results.value = [];
     return;
   }
-  results.value = await mockMusicProvider.searchTracks(query.value);
+  try {
+    results.value = await audiusProvider.searchTracks(query.value);
+  } catch (error) {
+    console.warn('Audius search failed', error);
+    results.value = [];
+  }
 };
 
 const selectTrack = (track: Track) => {
@@ -65,7 +71,26 @@ const parseStartMs = () => {
   if (!startTime.value) return null;
   const parts = startTime.value.split(':').map(Number);
   if (parts.length !== 2 || parts.some((p) => Number.isNaN(p))) return null;
-  return (parts[0] * 60 + parts[1]) * 1000;
+  const startMs = (parts[0] * 60 + parts[1]) * 1000;
+  if (!selected.value?.duration_ms) return startMs;
+  return Math.min(startMs, Math.max(0, selected.value.duration_ms - 15000));
+};
+
+const upsertTrackCache = async (track: Track) => {
+  await supabase.from('tracks_cache').upsert(
+    {
+      id: track.id,
+      source: 'audius',
+      title: track.title,
+      artist: track.artist,
+      duration_ms: track.duration_ms,
+      artwork_url: track.artwork_url ?? null,
+      permalink_url: track.permalink_url ?? null,
+      stream_url: track.stream_url ?? null,
+      last_fetched_at: new Date().toISOString(),
+    },
+    { onConflict: 'id' },
+  );
 };
 
 const createPost = async () => {
@@ -73,10 +98,12 @@ const createPost = async () => {
   await supabase.from('posts').insert({
     user_id: auth.userId,
     type: 'song_moment',
+    source: 'audius',
     track_id: selected.value.id,
     start_ms: parseStartMs(),
     text: text.value.slice(0, 120),
   });
+  await upsertTrackCache(selected.value);
   selected.value = null;
   query.value = '';
   results.value = [];
@@ -105,6 +132,12 @@ onMounted(async () => {
   border-radius: 12px;
   color: inherit;
   cursor: pointer;
+}
+.result img {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
 }
 .actions {
   display: flex;

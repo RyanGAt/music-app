@@ -3,10 +3,13 @@ export type Track = {
   title: string;
   artist: string;
   duration_ms: number;
-  preview_url: string;
+  artwork_url?: string;
+  permalink_url?: string;
+  stream_url?: string;
 };
 
 export interface MusicProvider {
+  getRandomTracks(count: number): Promise<Track[]>;
   searchTracks(query: string): Promise<Track[]>;
   getTrack(id: string): Promise<Track | null>;
 }
