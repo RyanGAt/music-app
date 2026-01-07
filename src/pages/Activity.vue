@@ -11,9 +11,14 @@
 
     <div class="stack">
       <div v-for="item in activity" :key="item.id" class="card activity-item">
-        <div class="tag">{{ item.type === 'like' ? 'Liked' : 'Commented' }}</div>
-        <div class="title">{{ item.trackTitle }}</div>
-        <div class="secondary">{{ item.trackArtist }}</div>
+        <div class="activity-header">
+          <img v-if="item.trackArtwork" :src="item.trackArtwork" alt="" />
+          <div>
+            <div class="tag">{{ item.type === 'like' ? 'You liked' : 'You commented' }}</div>
+            <div class="title">{{ item.trackTitle }}</div>
+            <div class="secondary">{{ item.trackArtist }}</div>
+          </div>
+        </div>
         <div v-if="item.commentText" class="comment">“{{ item.commentText }}”</div>
         <div class="secondary time">{{ new Date(item.created_at).toLocaleString() }}</div>
       </div>
@@ -33,6 +38,7 @@ type ActivityItem = {
   track_id: string;
   trackTitle: string;
   trackArtist: string;
+  trackArtwork?: string;
   commentText?: string;
 };
 
@@ -73,12 +79,12 @@ const loadActivity = async () => {
 
   const { data: cachedTracks } = await supabase
     .from('tracks_cache')
-    .select('id, title, artist')
+    .select('id, title, artist, artwork_url')
     .in('id', [...trackIds]);
 
-  const trackMap = new Map<string, { title: string; artist: string }>();
+  const trackMap = new Map<string, { title: string; artist: string; artwork?: string }>();
   cachedTracks?.forEach((track) => {
-    trackMap.set(track.id, { title: track.title, artist: track.artist });
+    trackMap.set(track.id, { title: track.title, artist: track.artist, artwork: track.artwork_url ?? undefined });
   });
 
   const items: ActivityItem[] = [];
@@ -94,6 +100,7 @@ const loadActivity = async () => {
       track_id: trackId,
       trackTitle: meta?.title ?? `Track ${trackId.slice(0, 6)}`,
       trackArtist: meta?.artist ?? 'Unknown artist',
+      trackArtwork: meta?.artwork,
     });
   });
 
@@ -108,6 +115,7 @@ const loadActivity = async () => {
       track_id: trackId,
       trackTitle: meta?.title ?? `Track ${trackId.slice(0, 6)}`,
       trackArtist: meta?.artist ?? 'Unknown artist',
+      trackArtwork: meta?.artwork,
       commentText: comment.text ?? undefined,
     });
   });
@@ -123,6 +131,19 @@ onMounted(loadActivity);
 .activity-item {
   display: grid;
   gap: 6px;
+}
+.activity-header {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: center;
+}
+.activity-header img {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 .tag {
   text-transform: uppercase;

@@ -8,7 +8,13 @@
       <div class="comments">
         <p v-if="comments.length === 0" class="secondary">No comments yet.</p>
         <div v-for="comment in comments" :key="comment.id" class="comment">
-          <div class="secondary">{{ comment.text }}</div>
+          <div class="comment-header">
+            <img v-if="comment.profiles?.avatar_url" :src="comment.profiles.avatar_url" alt="" />
+            <div>
+              <div class="name">{{ comment.profiles?.display_name || 'SoundScroller' }}</div>
+              <div class="secondary">{{ comment.text }}</div>
+            </div>
+          </div>
           <div class="secondary time">{{ new Date(comment.created_at).toLocaleString() }}</div>
         </div>
       </div>
@@ -26,7 +32,14 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 
-defineProps<{ comments: { id: string; text: string; created_at: string }[] }>();
+defineProps<{
+  comments: {
+    id: string;
+    text: string;
+    created_at: string;
+    profiles?: { display_name: string | null; avatar_url: string | null } | null;
+  }[];
+}>();
 
 defineEmits(['close', 'submit']);
 
@@ -76,6 +89,25 @@ header {
 .comment {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding-bottom: 8px;
+  display: grid;
+  gap: 6px;
+}
+.comment-header {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+}
+.comment-header img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.name {
+  font-weight: 600;
+  font-size: 0.85rem;
 }
 .time {
   font-size: 0.7rem;

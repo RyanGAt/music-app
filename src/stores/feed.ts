@@ -18,14 +18,15 @@ export type Post = {
   original?: Post | null;
   likeCount?: number;
   commentCount?: number;
+  recentLikeCount?: number;
+  recentCommentCount?: number;
+  popularityScore?: number;
 };
 
-const FEED_BASE = 1;
-const REPOST_BOOST = 1.5;
-const NEIGHBOR_BOOST = 1.2;
-const LIKE_BOOST = 0.25;
-const MIN_FEED_ITEMS = 30;
+const MIN_FEED_ITEMS = 50;
 const MOMENT_WINDOW_MS = 15000;
+const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const DUPLICATE_WINDOW_MS = 6 * 60 * 60 * 1000;
 
 const toTrackCacheRow = (track: Track) => ({
   id: track.id,
@@ -45,8 +46,8 @@ export const useFeedStore = defineStore('feed', {
     loading: false,
     trackCache: new Map<string, Track>(),
     activePostId: null as string | null,
-    tasteNeighbors: new Set<string>(),
     likedPostIds: new Set<string>(),
+    sortMode: 'latest' as 'latest' | 'popular',
   }),
   actions: {
     async upsertTrackCache(tracks: Track[]) {
@@ -92,79 +93,14 @@ export const useFeedStore = defineStore('feed', {
       await this.upsertTrackCache([track]);
       return track;
     },
-    async computeTasteNeighbors(userId: string) {
-      const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-      const { data: liked } = await supabase
-        .from('likes')
-        .select('user_id, post:posts!inner(track_id)')
-        .gte('created_at', cutoff)
-        .eq('user_id', userId);
-
-      const { data: reposted } = await supabase
-        .from('posts')
-        .select('user_id, original:posts!original_post_id(track_id)')
-        .eq('type', 'repost')
-        .gte('created_at', cutoff)
-        .eq('user_id', userId);
-
-      const trackIds = new Set<string>();
-      liked?.forEach((row) => {
-        if (row.post?.track_id) trackIds.add(row.post.track_id);
-      });
-      reposted?.forEach((row) => {
-        if (row.original?.track_id) trackIds.add(row.original.track_id);
-      });
-
-      if (trackIds.size === 0) {
-        this.tasteNeighbors = new Set();
-        return;
-      }
-
-      const { data: neighborLikes } = await supabase
-        .from('likes')
-        .select('user_id, post:posts!inner(track_id)')
-        .gte('created_at', cutoff)
-        .in('post.track_id', [...trackIds]);
-
-      const { data: neighborReposts } = await supabase
-        .from('posts')
-        .select('user_id, original:posts!original_post_id(track_id)')
-        .eq('type', 'repost')
-        .gte('created_at', cutoff)
-        .in('original.track_id', [...trackIds]);
-
-      const counts = new Map<string, Set<string>>();
-      const add = (neighborId: string, trackId: string) => {
-        if (neighborId === userId) return;
-        if (!counts.has(neighborId)) counts.set(neighborId, new Set());
-        counts.get(neighborId)!.add(trackId);
-      };
-
-      neighborLikes?.forEach((row) => {
-        if (row.post?.track_id && row.user_id) {
-          if (row.user_id !== userId) add(row.user_id, row.post.track_id);
-        }
-      });
-
-      neighborReposts?.forEach((row) => {
-        if (row.original?.track_id && row.user_id) {
-          if (row.user_id !== userId) add(row.user_id, row.original.track_id);
-        }
-      });
-
-      const neighbors = new Set<string>();
-      counts.forEach((trackSet, neighborId) => {
-        if (trackSet.size >= 3) neighbors.add(neighborId);
-      });
-      this.tasteNeighbors = neighbors;
-    },
     async loadPosts() {
       const { data: posts, error } = await supabase
         .from('posts')
         .select(
-          'id, user_id, type, track_id, start_ms, text, original_post_id, created_at, profiles:profiles!posts_user_id_fkey(id, display_name, avatar_url), original:posts!original_post_id(id, user_id, type, track_id, start_ms, text, created_at, profiles:profiles!posts_user_id_fkey(id, display_name, avatar_url))',
+          'id, user_id, type, track_id, start_ms, text, original_post_id, created_at',
         )
         .eq('visibility', 'public')
+        .eq('type', 'auto_moment')
         .order('created_at', { ascending: false })
         .limit(80);
 
@@ -185,8 +121,21 @@ export const useFeedStore = defineStore('feed', {
       }
       if (tracks.length === 0) return;
 
+      const duplicateCutoff = new Date(Date.now() - DUPLICATE_WINDOW_MS).toISOString();
+      const trackIds = tracks.map((track) => track.id);
+      const { data: recent } = await supabase
+        .from('posts')
+        .select('track_id')
+        .eq('type', 'auto_moment')
+        .gte('created_at', duplicateCutoff)
+        .in('track_id', trackIds);
+
+      const recentTrackIds = new Set(recent?.map((row) => row.track_id).filter(Boolean) ?? []);
+      const uniqueTracks = tracks.filter((track) => !recentTrackIds.has(track.id));
+      if (uniqueTracks.length === 0) return;
+
       const now = new Date().toISOString();
-      const inserts = tracks.map((track) => {
+      const inserts = uniqueTracks.map((track) => {
         const maxStart = Math.max(0, track.duration_ms - MOMENT_WINDOW_MS);
         const startMs = maxStart > 0 ? Math.floor(Math.random() * maxStart) : 0;
         return {
@@ -196,17 +145,39 @@ export const useFeedStore = defineStore('feed', {
           track_id: track.id,
           start_ms: startMs,
           text: null,
+          visibility: 'public',
           created_at: now,
         };
       });
 
       await supabase.from('posts').insert(inserts);
-      await this.upsertTrackCache(tracks);
+      await this.upsertTrackCache(uniqueTracks);
+    },
+    sortPosts(posts: Post[]) {
+      if (this.sortMode === 'latest') {
+        return [...posts].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+      }
+      return [...posts].sort(
+        (a, b) => (b.popularityScore ?? 0) - (a.popularityScore ?? 0) || Date.parse(b.created_at) - Date.parse(a.created_at),
+      );
+    },
+    calculatePopularityScore(post: Post) {
+      const totalLikes = post.likeCount ?? 0;
+      const totalComments = post.commentCount ?? 0;
+      const recentLikes = post.recentLikeCount ?? 0;
+      const recentComments = post.recentCommentCount ?? 0;
+      const hasRecent = recentLikes > 0 || recentComments > 0;
+      const scoreLikes = hasRecent ? recentLikes : totalLikes;
+      const scoreComments = hasRecent ? recentComments : totalComments;
+      return scoreLikes * 2 + scoreComments * 3;
+    },
+    setSortMode(mode: 'latest' | 'popular') {
+      this.sortMode = mode;
+      this.posts = this.sortPosts(this.posts);
     },
     async fetchFeed() {
       const auth = useAuthStore();
       this.loading = true;
-      await this.computeTasteNeighbors(auth.userId);
 
       let posts = await this.loadPosts();
       if (posts.length < MIN_FEED_ITEMS) {
@@ -220,8 +191,14 @@ export const useFeedStore = defineStore('feed', {
         this.loading = false;
         return;
       }
-      const { data: likes } = await supabase.from('likes').select('post_id, user_id').in('post_id', postIds);
-      const { data: comments } = await supabase.from('comments').select('post_id').in('post_id', postIds);
+      const { data: likes } = await supabase
+        .from('likes')
+        .select('post_id, user_id, created_at')
+        .in('post_id', postIds);
+      const { data: comments } = await supabase
+        .from('comments')
+        .select('post_id, created_at')
+        .in('post_id', postIds);
       const { data: userLikes } = await supabase
         .from('likes')
         .select('post_id')
@@ -231,70 +208,81 @@ export const useFeedStore = defineStore('feed', {
       this.likedPostIds = new Set(userLikes?.map((row) => row.post_id) ?? []);
 
       const likeCounts = new Map<string, number>();
+      const recentLikeCounts = new Map<string, number>();
+      const recentCutoff = Date.now() - RECENT_WINDOW_MS;
       likes?.forEach((like) => {
         likeCounts.set(like.post_id, (likeCounts.get(like.post_id) ?? 0) + 1);
+        if (Date.parse(like.created_at) >= recentCutoff) {
+          recentLikeCounts.set(like.post_id, (recentLikeCounts.get(like.post_id) ?? 0) + 1);
+        }
       });
 
       const commentCounts = new Map<string, number>();
+      const recentCommentCounts = new Map<string, number>();
       comments?.forEach((comment) => {
         commentCounts.set(comment.post_id, (commentCounts.get(comment.post_id) ?? 0) + 1);
+        if (Date.parse(comment.created_at) >= recentCutoff) {
+          recentCommentCounts.set(comment.post_id, (recentCommentCounts.get(comment.post_id) ?? 0) + 1);
+        }
       });
-
-      const neighborLikes = new Set<string>();
-      likes
-        ?.filter((like) => this.tasteNeighbors.has(like.user_id))
-        .forEach((like) => neighborLikes.add(like.post_id));
 
       const ranked = posts.map((post) => {
-        const createdAt = new Date(post.created_at).getTime();
-        const hours = (Date.now() - createdAt) / 36e5;
-        const freshness = 1 / (1 + hours / 24);
-        const isRepost = post.type === 'repost';
-        const score =
-          (FEED_BASE +
-            (isRepost ? REPOST_BOOST : 0) +
-            (likeCounts.get(post.id) ?? 0) * LIKE_BOOST +
-            (this.tasteNeighbors.has(post.user_id) || neighborLikes.has(post.id) ? NEIGHBOR_BOOST : 0)) *
-          freshness;
+        const totalLikes = likeCounts.get(post.id) ?? 0;
+        const totalComments = commentCounts.get(post.id) ?? 0;
+        const recentLikes = recentLikeCounts.get(post.id) ?? 0;
+        const recentComments = recentCommentCounts.get(post.id) ?? 0;
         return {
           ...post,
-          likeCount: likeCounts.get(post.id) ?? 0,
-          commentCount: commentCounts.get(post.id) ?? 0,
-          score,
-        } as Post & { score: number };
+          likeCount: totalLikes,
+          commentCount: totalComments,
+          recentLikeCount: recentLikes,
+          recentCommentCount: recentComments,
+          popularityScore: this.calculatePopularityScore({
+            ...post,
+            likeCount: totalLikes,
+            commentCount: totalComments,
+            recentLikeCount: recentLikes,
+            recentCommentCount: recentComments,
+          }),
+        } as Post;
       });
 
-      this.posts = ranked.sort((a, b) => b.score - a.score || Date.parse(b.created_at) - Date.parse(a.created_at));
+      this.posts = this.sortPosts(ranked);
       this.loading = false;
     },
     async toggleLike(postId: string, isLiked: boolean) {
       const auth = useAuthStore();
+      const post = this.posts.find((item) => item.id === postId);
+      if (!auth.userId || !post) return;
+      const delta = isLiked ? -1 : 1;
+      post.likeCount = Math.max(0, (post.likeCount ?? 0) + delta);
+      post.recentLikeCount = Math.max(0, (post.recentLikeCount ?? 0) + delta);
+      post.popularityScore = this.calculatePopularityScore(post);
+      if (isLiked) {
+        this.likedPostIds.delete(postId);
+      } else {
+        this.likedPostIds.add(postId);
+      }
       if (isLiked) {
         await supabase.from('likes').delete().eq('post_id', postId).eq('user_id', auth.userId);
       } else {
         await supabase.from('likes').insert({ post_id: postId, user_id: auth.userId });
       }
-      await this.fetchFeed();
-    },
-    async repost(postId: string, text: string | null) {
-      const auth = useAuthStore();
-      await supabase.from('posts').insert({
-        type: 'repost',
-        user_id: auth.userId,
-        original_post_id: postId,
-        text,
-        source: 'audius',
-      });
-      await this.fetchFeed();
+      this.posts = this.sortPosts(this.posts);
     },
     async addComment(postId: string, text: string) {
       const auth = useAuthStore();
+      const post = this.posts.find((item) => item.id === postId);
+      if (!auth.userId || !post) return;
+      post.commentCount = (post.commentCount ?? 0) + 1;
+      post.recentCommentCount = (post.recentCommentCount ?? 0) + 1;
+      post.popularityScore = this.calculatePopularityScore(post);
       await supabase.from('comments').insert({
         post_id: postId,
         user_id: auth.userId,
         text,
       });
-      await this.fetchFeed();
+      this.posts = this.sortPosts(this.posts);
     },
   },
 });
