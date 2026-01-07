@@ -25,10 +25,16 @@ export const usePlayerStore = defineStore('player', {
       await this.init();
     },
     async playTrack(track: Track, startMs?: number) {
-      if (!this.audioUnlocked) return;
-      if (!track.preview_url) return;
+      if (!this.audioUnlocked) return false;
+      if (!track.stream_url) return false;
       this.currentTrackId = track.id;
-      await playerService.fadeTo(track, startMs);
+      try {
+        await playerService.fadeTo(track, startMs);
+        return true;
+      } catch (error) {
+        console.warn('Playback failed', error);
+        return false;
+      }
     },
     async pause() {
       await playerService.pause();
