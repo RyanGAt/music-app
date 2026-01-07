@@ -1,14 +1,18 @@
 <template>
   <section class="stack">
-    <div v-if="auth.error" class="card error">{{ auth.error }}</div>
+    <div v-if="!supabaseConfigured" class="card error">
+      Missing Supabase env. Add <code>VITE_SUPABASE_URL</code> and
+      <code>VITE_SUPABASE_ANON_KEY</code> to <code>.env</code> and restart the dev server.
+    </div>
+    <div v-else-if="auth.error" class="card error">{{ auth.error }}</div>
     <div v-if="feed.loading" class="card">Loading feed…</div>
 
-    <div v-if="!player.audioUnlocked" class="card">
+    <div v-if="supabaseConfigured && !player.audioUnlocked" class="card">
       <p class="secondary">Tap to enable autoplay audio.</p>
       <button class="primary" @click="player.unlockAudio">Enable Audio</button>
     </div>
 
-    <div ref="feedContainer" class="feed-list">
+    <div v-if="supabaseConfigured" ref="feedContainer" class="feed-list">
       <div v-for="post in feed.posts" :key="post.id" :data-post-id="post.id">
         <FeedItem
           :post="post"
@@ -38,7 +42,7 @@ import CommentsModal from '../components/CommentsModal.vue';
 import { useAuthStore } from '../stores/auth';
 import { useFeedStore } from '../stores/feed';
 import { usePlayerStore } from '../stores/player';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 import type { Post } from '../stores/feed';
 
 const auth = useAuthStore();
@@ -136,7 +140,7 @@ const submitComment = async (text: string) => {
 
 onMounted(async () => {
   await auth.init();
-  if (auth.userId) {
+  if (supabaseConfigured && auth.userId) {
     await feed.fetchFeed();
     await loadTracks(feed.posts);
     requestAnimationFrame(setupObserver);

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 
 export type Profile = {
   id: string;
@@ -17,6 +17,11 @@ export const useAuthStore = defineStore('auth', {
   actions: {
     async init() {
       try {
+        if (!supabaseConfigured) {
+          this.error = 'Missing Supabase environment variables.';
+          this.ready = true;
+          return;
+        }
         const { data } = await supabase.auth.getSession();
         if (!data.session) {
           const { data: anonData, error } = await supabase.auth.signInAnonymously();

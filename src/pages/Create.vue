@@ -1,8 +1,12 @@
 <template>
   <section class="stack">
-    <div v-if="auth.error" class="card error">{{ auth.error }}</div>
+    <div v-if="!supabaseConfigured" class="card error">
+      Missing Supabase env. Add <code>VITE_SUPABASE_URL</code> and
+      <code>VITE_SUPABASE_ANON_KEY</code> to <code>.env</code> and restart the dev server.
+    </div>
+    <div v-else-if="auth.error" class="card error">{{ auth.error }}</div>
 
-    <div class="card stack">
+    <div v-if="supabaseConfigured" class="card stack">
       <label class="secondary">Search mock tracks</label>
       <input v-model="query" @input="search" placeholder="Search tracks" />
       <div class="results">
@@ -35,7 +39,7 @@ import { ref, onMounted } from 'vue';
 import { useAuthStore } from '../stores/auth';
 import { mockMusicProvider } from '../lib/mockMusicProvider';
 import type { Track } from '../lib/musicProvider';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 
 const auth = useAuthStore();
 
