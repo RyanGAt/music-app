@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct TrackListView: View {
-    let title: String
     let emptyTitle: String
     let emptyMessage: String
     let tracks: [Track]
@@ -9,8 +8,7 @@ struct TrackListView: View {
     @EnvironmentObject private var audioPlayer: AudioPlayer
 
     var body: some View {
-        NavigationStack {
-            Group {
+        Group {
                 if tracks.isEmpty {
                     ContentUnavailableView(emptyTitle, systemImage: "waveform", description: Text(emptyMessage))
                 } else {
@@ -40,9 +38,6 @@ struct TrackListView: View {
                     }
                     .listStyle(.plain)
                 }
-            }
-            .navigationTitle(title)
-            .background(Color.black)
         }
     }
 }

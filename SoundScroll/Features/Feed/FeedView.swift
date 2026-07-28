@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 struct FeedView: View {
     @EnvironmentObject private var audioPlayer: AudioPlayer
@@ -8,6 +9,12 @@ struct FeedView: View {
     @StateObject private var catalog = AppleMusicCatalog()
     @State private var selectedTrackID: Track.ID?
     @State private var hasStartedListening = false
+    @AppStorage("preferredGenres") private var storedGenres = DiscoveryPreferences.defaultGenres.joined(separator: ",")
+    @AppStorage("allowExplicitContent") private var allowExplicit = false
+    @AppStorage("autoplayPreviews") private var autoplay = true
+    @AppStorage("hapticsEnabled") private var haptics = true
+
+    private var genres: [String] { DiscoveryPreferences.genres(from: storedGenres) }
 
     var body: some View {
         ZStack {
@@ -22,6 +29,11 @@ struct FeedView: View {
                             TrackPage(track: track)
                                 .containerRelativeFrame([.horizontal, .vertical])
                                 .id(track.id)
+                                .onAppear {
+                                    guard let index = catalog.tracks.firstIndex(of: track),
+                                          index >= catalog.tracks.count - 4 else { return }
+                                    Task { await catalog.loadMore(genres: genres, allowExplicit: allowExplicit) }
+                                }
                         }
                     }
                     .scrollTargetLayout()
@@ -33,7 +45,8 @@ struct FeedView: View {
                 .onChange(of: selectedTrackID) { _, newID in
                     guard hasStartedListening,
                           let track = catalog.tracks.first(where: { $0.id == newID }) else { return }
-                    beginListening(to: track)
+                    if haptics { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
+                    if autoplay { beginListening(to: track, restart: true) }
                 }
 
                 if !hasStartedListening, let firstTrack = catalog.tracks.first {
@@ -45,10 +58,19 @@ struct FeedView: View {
                     .transition(.opacity)
                 }
             }
+
+            if let error = audioPlayer.errorMessage {
+                VStack { Spacer(); Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote.weight(.semibold)).padding(12).background(.ultraThinMaterial, in: Capsule()).padding(.bottom, 12) }
+            }
+
+            if catalog.isLoadingMore {
+                VStack { Spacer(); ProgressView("Loading more…").padding(10).background(.ultraThinMaterial, in: Capsule()).padding(.bottom, 8) }
+            }
         }
         .animation(.easeOut(duration: 0.3), value: hasStartedListening)
-        .task {
-            await catalog.load()
+        .task(id: "\(storedGenres)-\(allowExplicit)") {
+            await catalog.reload(genres: genres, allowExplicit: allowExplicit)
             selectedTrackID = catalog.tracks.first?.id
         }
     }
@@ -60,22 +82,30 @@ struct FeedView: View {
             ProgressView("Finding fresh sounds…")
                 .tint(.white)
                 .foregroundStyle(.white)
-        case .unavailable(let message):
-            ContentUnavailableView {
-                Label("Catalogue unavailable", systemImage: "wifi.exclamationmark")
-            } description: {
-                Text(message)
-            } actions: {
-                Button("Try Again") { Task { await catalog.load() } }
-                    .buttonStyle(.borderedProminent)
-            }
+        case .offline:
+            unavailable("You're offline", "Connect to the internet to discover Apple Music previews.", "wifi.slash")
+        case .noResults:
+            unavailable("No songs found", "Try selecting different discovery genres in Settings.", "music.note.list")
+        case .failed(let message):
+            unavailable("Couldn't load music", message, "exclamationmark.triangle")
         case .loaded:
             EmptyView()
         }
     }
 
-    private func beginListening(to track: Track) {
-        audioPlayer.play(track)
+    private func unavailable(_ title: String, _ message: String, _ icon: String) -> some View {
+            ContentUnavailableView {
+                Label(title, systemImage: icon)
+            } description: {
+                Text(message)
+            } actions: {
+                Button("Try Again") { Task { await catalog.reload(genres: genres, allowExplicit: allowExplicit) } }
+                    .buttonStyle(.borderedProminent)
+            }
+    }
+
+    private func beginListening(to track: Track, restart: Bool = false) {
+        audioPlayer.play(track, restart: restart)
         guard history.first?.trackID != track.id else { return }
         modelContext.insert(ListeningEvent(track: track))
         if history.count >= 100 {

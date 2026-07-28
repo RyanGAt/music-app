@@ -9,6 +9,7 @@ struct TrackPage: View {
     @Environment(\.openURL) private var openURL
     @Query private var savedTracks: [SavedTrack]
     @State private var dragProgress: Double?
+    @State private var spotifyMatch: SpotifyMatchState = .idle
 
     private var isCurrent: Bool { audioPlayer.currentTrackID == track.id }
     private var displayedProgress: Double {
@@ -56,6 +57,10 @@ struct TrackPage: View {
             .padding(.horizontal, 24)
         }
         .accessibilityElement(children: .contain)
+        .task(id: track.id) {
+            spotifyMatch = .matching
+            spotifyMatch = await SpotifyMatcher.shared.match(track)
+        }
     }
 
     private var header: some View {
@@ -102,11 +107,13 @@ struct TrackPage: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
-                Text("“\(track.moment)”")
+                if let moment = track.moment {
+                    Text("“\(moment)”")
                     .font(.system(size: 23, weight: .medium, design: .rounded))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 28)
                     .padding(.bottom, 18)
+                }
             }
             .foregroundStyle(.white)
         }
@@ -191,9 +198,36 @@ struct TrackPage: View {
 
             HStack(spacing: 10) {
                 destinationButton("Apple Music", systemImage: "music.note", url: track.appleMusicURL)
-                destinationButton("Spotify", systemImage: "arrow.up.right", url: track.spotifyURL)
+                spotifyButton
+                ShareLink(item: track.appleMusicURL ?? spotifySearchURL, subject: Text(track.title), message: Text("\(track.title) by \(track.artist)")) {
+                    Image(systemName: "square.and.arrow.up")
+                        .frame(width: 38, height: 38).background(.white.opacity(0.13), in: Circle())
+                }
+                .accessibilityLabel("Share song")
             }
         }
+    }
+
+    @ViewBuilder
+    private var spotifyButton: some View {
+        switch spotifyMatch {
+        case .exact(let url):
+            destinationButton("Spotify", systemImage: "arrow.up.right", url: url)
+        case .matching:
+            HStack { ProgressView(); Text("Matching…") }
+                .font(.caption).frame(maxWidth: .infinity).frame(height: 38)
+                .background(.white.opacity(0.13), in: Capsule())
+        case .failed:
+            destinationButton("Spotify match failed", systemImage: "exclamationmark.circle", url: spotifySearchURL)
+        case .idle, .unavailable:
+            destinationButton("Search Spotify", systemImage: "magnifyingglass", url: spotifySearchURL)
+        }
+    }
+
+    private var spotifySearchURL: URL {
+        let query = "\(track.title) \(track.artist)"
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? query
+        return URL(string: "https://open.spotify.com/search/\(encoded)") ?? URL(string: "https://open.spotify.com")!
     }
 
     private var isLiked: Bool { savedTracks.contains { $0.trackID == track.id } }

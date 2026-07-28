@@ -21,6 +21,10 @@ final class AudioPlayer: ObservableObject {
 
     init() {
         configureAudioSession()
+        let defaults = UserDefaults.standard
+        player.volume = defaults.object(forKey: "previewVolume") == nil
+            ? 0.9
+            : Float(defaults.double(forKey: "previewVolume"))
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.2, preferredTimescale: 600),
             queue: .main
@@ -36,8 +40,9 @@ final class AudioPlayer: ObservableObject {
         }
     }
 
-    func play(_ track: Track, startingAt fraction: Double? = nil) {
+    func play(_ track: Track, startingAt fraction: Double? = nil, restart: Bool = false) {
         if currentTrackID == track.id, player.currentItem != nil {
+            if restart { player.seek(to: .zero); elapsed = 0 }
             player.play()
             isPlaying = true
             return
@@ -100,6 +105,10 @@ final class AudioPlayer: ObservableObject {
     func pause() {
         player.pause()
         isPlaying = false
+    }
+
+    func setVolume(_ volume: Double) {
+        player.volume = Float(max(0, min(1, volume)))
     }
 
     func seek(to fraction: Double) {

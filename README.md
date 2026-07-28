@@ -25,16 +25,22 @@ history privately on-device with SwiftData.
 - Tap the central play/pause button to control the visible track.
 - Drag the progress bar to seek within the featured moment.
 - Use the speaker control to mute or restore audio.
-- Tap the heart to save a song locally, then find it in the **Likes** tab.
+- Tap the heart to save a song locally, then find it under **Liked Songs** in Library.
 - Open a full track with its Apple Music or Spotify destination button.
+- Use **Library** to switch between liked songs and listening history.
+- Choose discovery genres and playback preferences in **Settings**.
 
 ## Architecture
 
 - `SoundScroll/App` owns application entry and audio-session lifecycle.
 - `SoundScroll/Features/Feed` contains the paging interface and track presentation.
 - `SoundScroll/Catalog` searches MusicKit and maps Apple Music preview assets into the feed.
+- The catalogue maintains a unique ordered session queue and fetches additional genre-driven
+  batches as the listener approaches its end.
 - `SoundScroll/Audio` uses `AVPlayer` for remote preview streaming and seeking.
 - `SoundScroll/Persistence` stores likes and recent listening history with SwiftData.
+- Spotify matching uses ISRC first and strict title/artist comparison second when a server-issued
+  `SPOTIFY_ACCESS_TOKEN` build setting is available; otherwise the UI honestly offers a search.
 - Bundled tracks are compiled only as a `DEBUG` fallback when the catalogue is unavailable.
 
 There are no external package dependencies, accounts, or application backend.

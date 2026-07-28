@@ -10,7 +10,8 @@ struct Track: Identifiable, Hashable, Sendable {
     let title: String
     let artist: String
     let album: String
-    let moment: String
+    let moment: String?
+    let isrc: String?
     let previewURL: URL?
     let artworkURL: URL?
     let appleMusicURL: URL?
@@ -34,6 +35,7 @@ extension Track {
             artist: "Signal Shore",
             album: "Midnight Notes",
             moment: "A soft place to land.",
+            isrc: nil,
             previewURL: Bundle.main.url(forResource: "welcome-to-paradise", withExtension: "mp3"),
             artworkURL: nil,
             appleMusicURL: nil,
@@ -46,6 +48,7 @@ extension Track {
             artist: "Neon District",
             album: "After Hours",
             moment: "Windows down. City awake.",
+            isrc: nil,
             previewURL: Bundle.main.url(forResource: "she-said", withExtension: "mp3"),
             artworkURL: nil,
             appleMusicURL: nil,

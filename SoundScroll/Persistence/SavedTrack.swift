@@ -7,7 +7,8 @@ final class SavedTrack {
     var title: String
     var artist: String
     var album: String
-    var moment: String
+    var moment: String?
+    var isrc: String?
     var previewURL: URL?
     var artworkURL: URL?
     var appleMusicURL: URL?
@@ -21,6 +22,7 @@ final class SavedTrack {
         artist = track.artist
         album = track.album
         moment = track.moment
+        isrc = track.isrc
         previewURL = track.previewURL
         artworkURL = track.artworkURL
         appleMusicURL = track.appleMusicURL
@@ -31,7 +33,7 @@ final class SavedTrack {
 
     var track: Track {
         Track(
-            id: trackID, title: title, artist: artist, album: album, moment: moment,
+            id: trackID, title: title, artist: artist, album: album, moment: moment, isrc: isrc,
             previewURL: previewURL, artworkURL: artworkURL, appleMusicURL: appleMusicURL,
             spotifyURL: spotifyURL, colors: colors
         )
