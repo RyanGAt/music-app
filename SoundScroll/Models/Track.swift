@@ -1,58 +1,60 @@
+import Foundation
 import SwiftUI
 
-struct Track: Identifiable, Hashable {
+/// A UI-friendly track returned by a music catalogue.
+///
+/// Preview and destination URLs are deliberately separate: SoundScroll streams the
+/// provider's public preview while the destination opens the full song in its app.
+struct Track: Identifiable, Hashable, Sendable {
     let id: String
     let title: String
     let artist: String
+    let album: String
     let moment: String
-    let detail: String
-    let audioResource: String
-    let startTime: TimeInterval
-    let colors: [Color]
+    let previewURL: URL?
+    let artworkURL: URL?
+    let appleMusicURL: URL?
+    let spotifyURL: URL?
+    let colors: [UInt]
 
-    static let samples: [Track] = [
+    var gradientColors: [Color] { colors.map(Color.init(hex:)) }
+
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
+    static func == (lhs: Track, rhs: Track) -> Bool { lhs.id == rhs.id }
+}
+
+#if DEBUG
+extension Track {
+    /// Used only when catalogue loading is unavailable in development builds.
+    static let developmentFallback: [Track] = [
         Track(
-            id: "lofi-drift",
+            id: "dev-lofi-drift",
             title: "Lofi Drift",
             artist: "Signal Shore",
+            album: "Midnight Notes",
             moment: "A soft place to land.",
-            detail: "MIDNIGHT NOTES  ·  0:42",
-            audioResource: "welcome-to-paradise",
-            startTime: 42,
-            colors: [Color(hex: 0x242A58), Color(hex: 0x895B74), Color(hex: 0xE39A76)]
+            previewURL: Bundle.main.url(forResource: "welcome-to-paradise", withExtension: "mp3"),
+            artworkURL: nil,
+            appleMusicURL: nil,
+            spotifyURL: nil,
+            colors: [0x242A58, 0x895B74, 0xE39A76]
         ),
         Track(
-            id: "night-drive",
+            id: "dev-night-drive",
             title: "Night Drive",
             artist: "Neon District",
+            album: "After Hours",
             moment: "Windows down. City awake.",
-            detail: "AFTER HOURS  ·  1:08",
-            audioResource: "she-said",
-            startTime: 68,
-            colors: [Color(hex: 0x071B35), Color(hex: 0x284E74), Color(hex: 0xD34D8C)]
-        ),
-        Track(
-            id: "golden-hour",
-            title: "Golden Hour Loop",
-            artist: "Ember Lines",
-            moment: "Keep this feeling a little longer.",
-            detail: "SUNSET TAPES  ·  0:24",
-            audioResource: "the-receipt",
-            startTime: 24,
-            colors: [Color(hex: 0x432136), Color(hex: 0xB65345), Color(hex: 0xF3B75B)]
-        ),
-        Track(
-            id: "slow-bloom",
-            title: "Slow Bloom",
-            artist: "Quiet Hours",
-            moment: "Some songs arrive right on time.",
-            detail: "ROOM TO BREATHE  ·  0:16",
-            audioResource: "placeholder-1",
-            startTime: 16,
-            colors: [Color(hex: 0x163C38), Color(hex: 0x437967), Color(hex: 0xD9A66C)]
+            previewURL: Bundle.main.url(forResource: "she-said", withExtension: "mp3"),
+            artworkURL: nil,
+            appleMusicURL: nil,
+            spotifyURL: nil,
+            colors: [0x071B35, 0x284E74, 0xD34D8C]
         )
     ]
 }
+#endif
 
 extension Color {
     init(hex: UInt, alpha: Double = 1) {

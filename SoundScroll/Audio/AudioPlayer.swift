@@ -2,62 +2,87 @@ import AVFoundation
 import Combine
 import Foundation
 
+/// Streams remote catalogue previews and local development fallback files.
 @MainActor
-final class AudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
+final class AudioPlayer: ObservableObject {
     @Published private(set) var currentTrackID: Track.ID?
     @Published private(set) var isPlaying = false
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var duration: TimeInterval = 0
+    @Published private(set) var errorMessage: String?
     @Published var isMuted = false {
-        didSet { player?.volume = isMuted ? 0 : preferredVolume }
+        didSet { player.isMuted = isMuted }
     }
 
-    private var player: AVAudioPlayer?
-    private var progressTimer: Timer?
-    private var fadeTimer: Timer?
-    private let preferredVolume: Float = 0.9
+    private let player = AVPlayer()
+    private var timeObserver: Any?
+    private var endObserver: NSObjectProtocol?
+    private var loadTask: Task<Void, Never>?
 
-    override init() {
-        super.init()
+    init() {
         configureAudioSession()
+        timeObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.2, preferredTimescale: 600),
+            queue: .main
+        ) { [weak self] time in
+            Task { @MainActor in
+                guard let self else { return }
+                self.elapsed = time.seconds.isFinite ? max(0, time.seconds) : 0
+                if let itemDuration = self.player.currentItem?.duration.seconds,
+                   itemDuration.isFinite {
+                    self.duration = itemDuration
+                }
+            }
+        }
     }
 
-    func play(_ track: Track, crossfade: Bool = true) {
-        if currentTrackID == track.id, let player {
+    func play(_ track: Track, startingAt fraction: Double? = nil) {
+        if currentTrackID == track.id, player.currentItem != nil {
             player.play()
             isPlaying = true
-            startProgressUpdates()
+            return
+        }
+        guard let previewURL = track.previewURL else {
+            errorMessage = "No preview is available for this song."
+            pause()
             return
         }
 
-        guard let url = Bundle.main.url(forResource: track.audioResource, withExtension: "mp3") else {
-            return
-        }
-
-        do {
-            let nextPlayer = try AVAudioPlayer(contentsOf: url)
-            nextPlayer.delegate = self
-            nextPlayer.prepareToPlay()
-            nextPlayer.currentTime = min(track.startTime, max(0, nextPlayer.duration - 1))
-            nextPlayer.volume = crossfade ? 0 : (isMuted ? 0 : preferredVolume)
-
-            stopFade()
-            let previousPlayer = player
-            player = nextPlayer
-            currentTrackID = track.id
-            duration = nextPlayer.duration
-            elapsed = nextPlayer.currentTime
-            nextPlayer.play()
-            isPlaying = true
-            startProgressUpdates()
-
-            if crossfade {
-                crossfade(from: previousPlayer, to: nextPlayer)
-            } else {
-                previousPlayer?.stop()
+        loadTask?.cancel()
+        loadTask = Task { [weak self] in
+            guard let self else { return }
+            let asset = AVURLAsset(url: previewURL)
+            do {
+                let (isPlayable, assetDuration) = try await asset.load(.isPlayable, .duration)
+                guard isPlayable else {
+                    throw PlaybackError.unplayable
+                }
+                guard !Task.isCancelled else { return }
+                let item = AVPlayerItem(asset: asset)
+                self.observeEnd(of: item)
+                self.player.replaceCurrentItem(with: item)
+                self.player.isMuted = self.isMuted
+                self.currentTrackID = track.id
+                self.duration = assetDuration.seconds.isFinite ? assetDuration.seconds : 0
+                if let fraction, self.duration > 0 {
+                    let start = CMTime(
+                        seconds: max(0, min(1, fraction)) * self.duration,
+                        preferredTimescale: 600
+                    )
+                    await self.player.seek(to: start, toleranceBefore: .zero, toleranceAfter: .zero)
+                    self.elapsed = start.seconds
+                } else {
+                    self.elapsed = 0
+                }
+                self.errorMessage = nil
+                self.player.play()
+                self.isPlaying = true
+            } catch is CancellationError {
+                return
+            } catch {
+                self.errorMessage = "This preview couldn't be played."
+                self.isPlaying = false
             }
-        } catch {
-            isPlaying = false
         }
     }
 
@@ -67,27 +92,31 @@ final class AudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         } else if isPlaying {
             pause()
         } else {
-            player?.play()
+            player.play()
             isPlaying = true
-            startProgressUpdates()
         }
     }
 
     func pause() {
-        player?.pause()
+        player.pause()
         isPlaying = false
-        stopProgressUpdates()
     }
 
     func seek(to fraction: Double) {
-        guard let player else { return }
-        player.currentTime = max(0, min(1, fraction)) * player.duration
-        elapsed = player.currentTime
+        guard duration > 0 else { return }
+        let time = CMTime(seconds: max(0, min(1, fraction)) * duration, preferredTimescale: 600)
+        player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        isPlaying = false
-        stopProgressUpdates()
+    private func observeEnd(of item: AVPlayerItem) {
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.isPlaying = false }
+        }
     }
 
     private func configureAudioSession() {
@@ -96,55 +125,15 @@ final class AudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             try session.setCategory(.playback, mode: .default)
             try session.setActive(true)
         } catch {
-            // The feed remains usable without audio, for example in SwiftUI previews.
+            errorMessage = "Audio is unavailable on this device."
         }
-    }
-
-    private func startProgressUpdates() {
-        stopProgressUpdates()
-        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, let player = self.player else { return }
-                self.elapsed = player.currentTime
-                self.duration = player.duration
-            }
-        }
-    }
-
-    private func stopProgressUpdates() {
-        progressTimer?.invalidate()
-        progressTimer = nil
-    }
-
-    private func crossfade(from oldPlayer: AVAudioPlayer?, to newPlayer: AVAudioPlayer) {
-        let steps = 12
-        var step = 0
-        fadeTimer = Timer.scheduledTimer(withTimeInterval: 0.025, repeats: true) { [weak self, weak oldPlayer, weak newPlayer] timer in
-            Task { @MainActor in
-                guard let self, let newPlayer else {
-                    timer.invalidate()
-                    return
-                }
-                step += 1
-                let progress = Float(step) / Float(steps)
-                oldPlayer?.volume = self.preferredVolume * (1 - progress)
-                newPlayer.volume = self.isMuted ? 0 : self.preferredVolume * progress
-                if step >= steps {
-                    oldPlayer?.stop()
-                    timer.invalidate()
-                    self.fadeTimer = nil
-                }
-            }
-        }
-    }
-
-    private func stopFade() {
-        fadeTimer?.invalidate()
-        fadeTimer = nil
     }
 
     deinit {
-        progressTimer?.invalidate()
-        fadeTimer?.invalidate()
+        loadTask?.cancel()
+        if let timeObserver { player.removeTimeObserver(timeObserver) }
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
     }
+
+    private enum PlaybackError: Error { case unplayable }
 }

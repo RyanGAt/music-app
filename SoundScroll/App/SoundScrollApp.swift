@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 @main
 struct SoundScrollApp: App {
@@ -7,7 +8,7 @@ struct SoundScrollApp: App {
 
     var body: some Scene {
         WindowGroup {
-            FeedView(tracks: Track.samples)
+            AppShell()
                 .environmentObject(audioPlayer)
                 .preferredColorScheme(.dark)
                 .onChange(of: scenePhase) { _, phase in
@@ -16,5 +17,6 @@ struct SoundScrollApp: App {
                     }
                 }
         }
+        .modelContainer(for: [SavedTrack.self, ListeningEvent.self])
     }
 }

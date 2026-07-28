@@ -1,9 +1,13 @@
 import SwiftUI
+import SwiftData
 
 struct TrackPage: View {
     let track: Track
 
     @EnvironmentObject private var audioPlayer: AudioPlayer
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.openURL) private var openURL
+    @Query private var savedTracks: [SavedTrack]
     @State private var dragProgress: Double?
 
     private var isCurrent: Bool { audioPlayer.currentTrackID == track.id }
@@ -15,7 +19,7 @@ struct TrackPage: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: track.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(colors: track.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing)
                 .overlay {
                     RadialGradient(
                         colors: [.white.opacity(0.16), .clear],
@@ -28,7 +32,7 @@ struct TrackPage: View {
                 .ignoresSafeArea()
 
             Circle()
-                .fill(track.colors.last?.opacity(0.38) ?? .clear)
+                .fill(track.gradientColors.last?.opacity(0.38) ?? .clear)
                 .frame(width: 420, height: 420)
                 .blur(radius: 65)
                 .offset(x: -150, y: 250)
@@ -89,13 +93,20 @@ struct TrackPage: View {
                 .shadow(color: .black.opacity(0.34), radius: 35, y: 22)
 
             VStack(spacing: 20) {
-                Image(systemName: "waveform")
-                    .font(.system(size: 80, weight: .ultraLight))
-                    .symbolEffect(.variableColor.iterative, isActive: isCurrent && audioPlayer.isPlaying)
+                AsyncImage(url: track.artworkURL) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 80, weight: .ultraLight))
+                        .symbolEffect(.variableColor.iterative, isActive: isCurrent && audioPlayer.isPlaying)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
                 Text("“\(track.moment)”")
                     .font(.system(size: 23, weight: .medium, design: .rounded))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 28)
+                    .padding(.bottom, 18)
             }
             .foregroundStyle(.white)
         }
@@ -106,7 +117,7 @@ struct TrackPage: View {
     private var metadata: some View {
         HStack(alignment: .bottom, spacing: 16) {
             VStack(alignment: .leading, spacing: 5) {
-                Text(track.detail)
+                Text(track.album.uppercased())
                     .font(.caption2.weight(.bold))
                     .tracking(1.6)
                     .foregroundStyle(.white.opacity(0.58))
@@ -118,10 +129,13 @@ struct TrackPage: View {
                     .foregroundStyle(.white.opacity(0.72))
             }
             Spacer()
-            Image(systemName: "chevron.up.chevron.down")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.6))
-                .accessibilityHidden(true)
+            Button { toggleLike() } label: {
+                Image(systemName: isLiked ? "heart.fill" : "heart")
+                    .font(.title2)
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isLiked ? "Unlike song" : "Like song")
         }
     }
 
@@ -142,8 +156,11 @@ struct TrackPage: View {
                         }
                         .onEnded { value in
                             let progress = max(0, min(1, value.location.x / width))
-                            if !isCurrent { audioPlayer.play(track, crossfade: false) }
-                            audioPlayer.seek(to: progress)
+                            if isCurrent {
+                                audioPlayer.seek(to: progress)
+                            } else {
+                                audioPlayer.play(track, startingAt: progress)
+                            }
                             dragProgress = nil
                         }
                 )
@@ -171,6 +188,35 @@ struct TrackPage: View {
             }
             .font(.caption.monospacedDigit().weight(.medium))
             .foregroundStyle(.white.opacity(0.72))
+
+            HStack(spacing: 10) {
+                destinationButton("Apple Music", systemImage: "music.note", url: track.appleMusicURL)
+                destinationButton("Spotify", systemImage: "arrow.up.right", url: track.spotifyURL)
+            }
+        }
+    }
+
+    private var isLiked: Bool { savedTracks.contains { $0.trackID == track.id } }
+
+    private func toggleLike() {
+        if let saved = savedTracks.first(where: { $0.trackID == track.id }) {
+            modelContext.delete(saved)
+        } else {
+            modelContext.insert(SavedTrack(track: track))
+        }
+    }
+
+    @ViewBuilder
+    private func destinationButton(_ title: String, systemImage: String, url: URL?) -> some View {
+        if let url {
+            Button { openURL(url) } label: {
+                Label(title, systemImage: systemImage)
+                    .font(.caption.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 38)
+                    .background(.white.opacity(0.13), in: Capsule())
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -180,7 +226,10 @@ struct TrackPage: View {
     }
 }
 
+#if DEBUG
 #Preview {
-    TrackPage(track: Track.samples[0])
+    TrackPage(track: Track.developmentFallback[0])
         .environmentObject(AudioPlayer())
+        .modelContainer(for: SavedTrack.self, inMemory: true)
 }
+#endif
